@@ -52,7 +52,7 @@ export async function createMap2D({ container, cables, lps, borders, callbacks }
     type: 'FeatureCollection',
     features: list.map((p) => ({
       type: 'Feature',
-      properties: { n: p.n, z: p.z },
+      properties: { n: p.n, z: p.z, r: p.r ?? 0 },
       geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
     })),
   });
@@ -152,27 +152,27 @@ export async function createMap2D({ container, cables, lps, borders, callbacks }
           'circle-opacity': 0.95,
         },
       },
-      ...labelLayers('country-labels', 'countries', [0.8, 1.6, 2.4, 3.2], {
+      ...labelLayers('country-labels', 'countries', [0.5, 1.2, 2.0, 2.8], {
         'text-field': ['get', 'n'],
         'text-font': ['Open Sans Regular'],
-        'text-size': ['interpolate', ['linear'], ['zoom'], 1, 9.5, 4, 13, 7, 15],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 1, 10.5, 4, 13.5, 7, 15],
         'text-transform': 'uppercase',
         'text-letter-spacing': 0.12,
-        'symbol-sort-key': ['get', 'z'],
+        'symbol-sort-key': ['get', 'r'],
       }, {
-        'text-color': 'rgba(158,175,199,0.85)',
+        'text-color': 'rgba(168,184,206,0.9)',
         'text-halo-color': '#02040a',
         'text-halo-width': 1.2,
       }),
-      ...labelLayers('city-labels', 'cities', [2.8, 3.4, 4.2], {
+      ...labelLayers('city-labels', 'cities', [2.4, 3.0, 3.8], {
         'text-field': ['get', 'n'],
         'text-font': ['Open Sans Regular'],
         'text-size': ['interpolate', ['linear'], ['zoom'], 3, 10, 8, 12.5],
-        'symbol-sort-key': ['get', 'z'],
+        'symbol-sort-key': ['get', 'r'],
         'text-offset': [0, 0.4],
         'text-anchor': 'top',
       }, {
-        'text-color': 'rgba(120,140,165,0.9)',
+        'text-color': 'rgba(128,148,172,0.9)',
         'text-halo-color': '#02040a',
         'text-halo-width': 1.1,
       }),
@@ -194,11 +194,6 @@ export async function createMap2D({ container, cables, lps, borders, callbacks }
   map.touchZoomRotate?.disableRotation?.();
 
   map.on('error', (e) => console.error('[map2d] map error:', e.error?.message ?? e));
-  map.on('sourcedata', (e) => {
-    if (e.isSourceLoaded) console.log('[map2d] source loaded:', e.sourceId);
-  });
-  map.once('load', () => console.log('[map2d] load fired'));
-  map.once('idle', () => console.log('[map2d] idle'));
   // usable at first render; sources keep streaming in, filters re-sync on load
   await new Promise((resolve) => map.once('render', resolve));
   map.once('load', () => applyFilters());

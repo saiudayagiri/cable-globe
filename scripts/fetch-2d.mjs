@@ -51,9 +51,11 @@ const countries = countriesRaw.features.map((f) => {
     lat = best.reduce((s, c) => s + c[1], 0) / best.length;
   }
   const pop = p.POP_EST ?? 0;
-  const z = pop > 1e8 ? 0.8 : pop > 2e7 ? 1.6 : pop > 5e6 ? 2.4 : 3.2;
-  return { n: p.NAME ?? p.ADMIN, lat: round(lat), lng: round(lng), z };
+  const z = pop > 1e8 ? 0.5 : pop > 2e7 ? 1.2 : pop > 5e6 ? 2.0 : 2.8;
+  return { n: p.NAME ?? p.ADMIN, lat: round(lat), lng: round(lng), z, pop };
 });
+// bigger countries win label collisions
+countries.sort((a, b) => b.pop - a.pop).forEach((c, i) => { c.r = i; delete c.pop; });
 
 // ---- city label points ----
 console.log('Fetching city labels…');
@@ -62,9 +64,10 @@ const cities = placesRaw.features.map((f) => {
   const p = f.properties;
   const [lng, lat] = f.geometry.coordinates;
   const pop = p.POP_MAX ?? 0;
-  const z = pop > 8e6 ? 2.8 : pop > 3e6 ? 3.4 : 4.2;
-  return { n: p.NAME, lat: round(lat), lng: round(lng), z };
+  const z = pop > 8e6 ? 2.4 : pop > 3e6 ? 3.0 : 3.8;
+  return { n: p.NAME, lat: round(lat), lng: round(lng), z, pop };
 });
+cities.sort((a, b) => b.pop - a.pop).forEach((c, i) => { c.r = i; delete c.pop; });
 
 await writeFile(new URL('places.json', OUT), JSON.stringify({ countries, cities }));
 

@@ -222,6 +222,42 @@ globe.scene().add(satsGroup);
 const activeBeams = [];
 let lastBeam = 0;
 
+// a tiny drawn satellite (solar wings + body + dish) so it reads as a
+// spacecraft, not another star
+function satTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  x.translate(32, 34);
+  x.rotate(-Math.PI / 5);
+  // solar panel wings
+  x.fillStyle = '#6db8ff';
+  x.fillRect(-30, -7, 21, 14);
+  x.fillRect(9, -7, 21, 14);
+  x.strokeStyle = 'rgba(4,10,22,0.95)';
+  x.lineWidth = 2;
+  for (const px of [-24, -17, -10, 15, 22]) {
+    x.beginPath();
+    x.moveTo(px, -7);
+    x.lineTo(px, 7);
+    x.stroke();
+  }
+  x.strokeRect(-30, -7, 21, 14);
+  x.strokeRect(9, -7, 21, 14);
+  // body
+  x.fillStyle = '#f4f8ff';
+  x.fillRect(-8, -10, 16, 20);
+  x.strokeRect(-8, -10, 16, 20);
+  // dish
+  x.fillStyle = '#ffd479';
+  x.beginPath();
+  x.arc(0, -14, 5, 0, Math.PI * 2);
+  x.fill();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 async function initSats() {
   const data = await fetch('data/satellites.json').then((r) => r.json());
   const D = Math.PI / 180;
@@ -240,11 +276,11 @@ async function initSats() {
     new THREE.Points(
       geom,
       new THREE.PointsMaterial({
-        color: 0xcfe8ff,
-        size: 2.4,
+        map: satTexture(),
+        size: 13,
         sizeAttenuation: false,
         transparent: true,
-        opacity: 0.9,
+        alphaTest: 0.05,
         depthWrite: false,
       })
     )
