@@ -289,6 +289,7 @@ async function initSats() {
     m0: s.m * D,
     n: (2 * Math.PI) / s.p, // rad per minute
     dt0: (_d2000Now - s.ep) * 1440, // minutes from element epoch to page load
+    y: parseInt(s.d) || 0, // launch year from intl designator — timeline filter
   }));
   satPosAttr = new THREE.BufferAttribute(new Float32Array(satParams.length * 3), 3);
   const geom = new THREE.BufferGeometry();
@@ -366,10 +367,11 @@ async function setSats(on) {
   satsGroup.visible = on;
 }
 const satsBtn = $('ctl-sats');
-satsBtn.onclick = () => {
+satsBtn.onclick = async () => {
   satsPref = !satsPref;
   satsBtn.classList.toggle('on', satsPref);
-  setSats(satsPref);
+  await setSats(satsPref);
+  updateTimeline(); // refresh "· N sats" in the year readout
 };
 
 function satPos(k, out) {
@@ -377,7 +379,13 @@ function satPos(k, out) {
 }
 
 function spawnBeam() {
-  const k = Math.floor(Math.random() * satParams.length);
+  const ymax = yearMax();
+  let k = -1;
+  for (let tries = 0; tries < 12; tries++) {
+    const c = Math.floor(Math.random() * satParams.length);
+    if (satParams[c].y <= ymax) { k = c; break; }
+  }
+  if (k === -1) return;
   const lp = landingPoints[Math.floor(Math.random() * landingPoints.length)];
   const g = globe.getCoords(lp.lat, lp.lng, 0.005);
   const ground = new THREE.Vector3(g.x, g.y, g.z);
@@ -413,7 +421,12 @@ function spawnBeam() {
 const _satV = new THREE.Vector3(), _beamV = new THREE.Vector3(), _orbV = new THREE.Vector3();
 function updateSats(tSec) {
   const tMin = (tSec * SAT_TIME_SCALE) / 60;
+  const ymax = yearMax();
   for (let k = 0; k < satParams.length; k++) {
+    if (satParams[k].y > ymax) {
+      satPosAttr.setXYZ(k, 0, 0, 0); // parked inside the globe = invisible
+      continue;
+    }
     computeSatPos(k, tMin, _satV);
     satPosAttr.setXYZ(k, _satV.x, _satV.y, _satV.z);
   }
@@ -463,7 +476,9 @@ function pickSat(clientX, clientY) {
   cam.getWorldPosition(_camV);
   const rect = globeEl.getBoundingClientRect();
   let best = null, bestD2 = 14 * 14;
+  const ymax = yearMax();
   for (let k = 0; k < satParams.length; k++) {
+    if (satParams[k].y > ymax) continue;
     _pickV.set(satPosAttr.getX(k), satPosAttr.getY(k), satPosAttr.getZ(k));
     // occluded by the globe? (closest approach of cam->sat ray to Earth's center)
     _rayV.copy(_pickV).sub(_camV);
@@ -924,11 +939,17 @@ function updateTimeline() {
   const all = v >= YEAR_ALL;
   $('year-label').textContent = all ? 'All years' : v;
   const n = all ? cables.length : cables.filter((c) => c.year <= v).length;
-  $('year-count').textContent = `${n} cables`;
+  let satNote = '';
+  if (satsOn && satMeta) {
+    const ns = all ? satMeta.length : satParams.filter((s) => s.y <= v).length;
+    satNote = ` · ${ns} sats`;
+  }
+  $('year-count').textContent = `${n} cables${satNote}`;
   if (selSet.size === 1) {
     const [only] = selSet;
     if (cables[only].year > yearMax()) clearSelection();
   }
+  if (selectedSat !== null && satParams[selectedSat].y > yearMax()) clearSelection();
 }
 yearInput.addEventListener('input', () => { stopPlay(); updateTimeline(); });
 
