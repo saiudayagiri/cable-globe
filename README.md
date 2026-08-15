@@ -17,6 +17,23 @@ npm run data    # re-fetch latest cable data from TeleGeography's public API
 npm run dev
 ```
 
+## Deploy
+
+Vercel (current production): `vercel deploy --prod`.
+
+Self-hosted / Rancher / any Kubernetes:
+
+```bash
+docker build -t <registry>/cable-atlas:v1 .
+docker push <registry>/cable-atlas:v1
+# edit image + host in deploy/k8s.yaml, then
+kubectl apply -f deploy/k8s.yaml
+```
+
+The container is a ~15 MB nginx serving the static build — no GPU resources
+needed server-side (all rendering is client WebGL). Each pod handles thousands
+of concurrent visitors; 2 replicas is plenty.
+
 ## Data
 
 Cable geometry and metadata © [TeleGeography](https://www.submarinecablemap.com),
