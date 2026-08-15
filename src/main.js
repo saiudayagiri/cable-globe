@@ -14,9 +14,9 @@ const $ = (id) => document.getElementById(id);
 main().catch((err) => console.error(err));
 
 async function main() {
-const [cables, landingPoints, borders] = await Promise.all(
-  ['data/cables.json', 'data/landing-points.json', 'data/borders.json'].map((u) =>
-    fetch(u).then((r) => r.json())
+const [cables, landingPoints, borders, places] = await Promise.all(
+  ['data/cables.json', 'data/landing-points.json', 'data/borders.json', 'data/places.json'].map(
+    (u) => fetch(u).then((r) => r.json())
   )
 );
 
@@ -161,6 +161,49 @@ const borderLines = new THREE.LineSegments(
   })
 );
 globe.scene().add(borderLines);
+
+// ---------- country & city labels on the globe ----------
+let labelsOn = true, lastLabelZoom = -99;
+const labelData = [
+  ...places.countries.map((p) => ({
+    lat: p.lat, lng: p.lng, text: p.n.toUpperCase(), z: p.z, r: p.r ?? 0, city: false,
+  })),
+  ...places.cities
+    .filter((p) => (p.r ?? 999) < 400)
+    .map((p) => ({ lat: p.lat, lng: p.lng, text: p.n, z: p.z, r: p.r ?? 0, city: true })),
+];
+
+function updateLabels(force = false) {
+  const alt = globe.pointOfView().altitude ?? 2;
+  const zoomEq = Math.log2(4.5 / Math.max(alt, 0.02)); // same scale as the 2D map
+  if (!force && Math.abs(zoomEq - lastLabelZoom) < 0.25) return;
+  lastLabelZoom = zoomEq;
+  if (!labelsOn) { globe.labelsData([]); return; }
+  const visible = labelData
+    .filter((l) => zoomEq + 0.9 >= l.z) // globe has no label collisions — show a bucket early
+    .sort((a, b) => a.r - b.r)
+    .slice(0, 260);
+  globe
+    .labelsData(visible)
+    .labelLat((d) => d.lat)
+    .labelLng((d) => d.lng)
+    .labelText((d) => d.text)
+    .labelSize((d) => (d.city ? alt * 0.55 + 0.08 : alt * 0.85 + 0.15))
+    .labelColor((d) => (d.city ? 'rgba(255,214,170,0.75)' : 'rgba(168,184,206,0.62)'))
+    .labelDotRadius((d) => (d.city ? Math.max(0.06, alt * 0.05) : 0))
+    .labelAltitude(0.008)
+    .labelResolution(2)
+    .labelsTransitionDuration(0);
+}
+controls.addEventListener('change', () => updateLabels());
+updateLabels(true);
+
+const labelsBtn = $('ctl-labels');
+labelsBtn.onclick = () => {
+  labelsOn = !labelsOn;
+  labelsBtn.classList.toggle('on', labelsOn);
+  updateLabels(true);
+};
 
 // ---------- landing points (one Points cloud) ----------
 const lpYear = new Map(); // landing point id -> earliest cable year
@@ -861,13 +904,19 @@ $('panel-lps').addEventListener('click', (ev) => {
 $('panel-close').onclick = () => clearSelection();
 
 // ---------- pointer interaction ----------
-globe.onGlobeClick(({ lat, lng }) => {
+function handleGlobePoint(lat, lng) {
   if (performance.now() < suppressGlobeClickUntil) return; // satellite click won
   const thr = pickThreshold();
   const lp = nearestLandingPoint(lat, lng, Math.min(0.45, thr * 0.4));
   if (lp && (lpCables.get(lp.id)?.length ?? 0) > 0) return selectHub(lp, false);
   const ci = nearestCable(lat, lng, thr);
   ci === null ? clearSelection() : selectCable(ci, false);
+}
+globe.onGlobeClick(({ lat, lng }) => handleGlobePoint(lat, lng));
+// label sprites sit in front of the globe — forward their clicks
+globe.onLabelClick((l, ev) => {
+  const c = globe.toGlobeCoords(ev.clientX, ev.clientY);
+  if (c) handleGlobePoint(c.lat, c.lng);
 });
 
 // satellite clicks (satellites float off the globe, so onGlobeClick misses them)
@@ -1315,15 +1364,9 @@ const routeWrap = $('route-wrap');
 let placeIndex = null;
 let routeFrom = null, routeTo = null;
 
-async function ensurePlaceIndex() {
-  if (placeIndex) return;
-  let cityPlaces = [];
-  try {
-    const places = await fetch('data/places.json').then((r) => r.json());
-    cityPlaces = places.cities.map((c) => ({ name: c.n, sub: 'city', lat: c.lat, lng: c.lng }));
-  } catch { /* cities optional */ }
-  placeIndex = [
-    ...cityPlaces,
+function ensurePlaceIndex() {
+  placeIndex ??= [
+    ...places.cities.map((c) => ({ name: c.n, sub: 'city', lat: c.lat, lng: c.lng })),
     ...landingPoints.map((lp) => ({ name: lp.name, sub: 'landing point', lat: lp.lat, lng: lp.lng })),
   ];
 }
@@ -1350,11 +1393,10 @@ $('route-close').onclick = closeRoute;
 
 function wireRouteInput(inputId, resId, setter) {
   const input = $(inputId), res = $(resId);
-  input.addEventListener('input', async () => {
+  input.addEventListener('input', () => {
     const q = input.value.trim().toLowerCase();
     if (q.length < 2) { res.hidden = true; return; }
-    await ensurePlaceIndex();
-    if (input.value.trim().toLowerCase() !== q) return; // superseded keystroke
+    ensurePlaceIndex();
     const hits = placeIndex
       .filter((p) => p.name.toLowerCase().includes(q))
       .sort((a, b) => (b.sub === 'city' ? 1 : 0) - (a.sub === 'city' ? 1 : 0))
