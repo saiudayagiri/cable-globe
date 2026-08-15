@@ -578,6 +578,7 @@ function renderSatPanel(s) {
 const spaceGroup = new THREE.Group();
 spaceGroup.visible = false;
 globe.scene().add(spaceGroup);
+const spaceBodies = []; // slowly self-rotating textured spheres
 {
   const cam = globe.camera();
   cam.far = 12000;
@@ -640,44 +641,63 @@ globe.scene().add(spaceGroup);
     return sp;
   }
 
-  function addBody(pos, radius, color, label, emissive = 0.6) {
+  // real sunlight: one directional light from the Sun's true direction, scoped
+  // to layer 1 so it lights only celestial bodies (the Moon shows its actual
+  // current phase). NASA-imagery textures (Solar System Scope, CC BY) load
+  // lazily the first time the sky becomes visible.
+  const sunDir = earthPos.clone().negate();
+  const sunPos = skyPos(sunDir, 2600);
+  const sunLight = new THREE.DirectionalLight(0xfff2dc, 2.4);
+  sunLight.position.copy(sunPos);
+  sunLight.target.position.set(0, 0, 0);
+  sunLight.layers.set(1);
+  spaceGroup.add(sunLight, sunLight.target);
+  const spaceAmbient = new THREE.AmbientLight(0x223344, 0.5);
+  spaceAmbient.layers.set(1);
+  spaceGroup.add(spaceAmbient);
+  cam.layers.enable(1);
+
+  const texturedBodies = []; // {mesh, file}
+  function addBody(pos, radius, file, label, { lit = true, tilt = 0 } = {}) {
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(radius, 24, 24),
-      new THREE.MeshStandardMaterial({
-        color, emissive: color, emissiveIntensity: emissive, transparent: true,
-      })
+      new THREE.SphereGeometry(radius, 32, 32),
+      lit
+        ? new THREE.MeshStandardMaterial({ color: 0x555b66, roughness: 1, metalness: 0 })
+        : new THREE.MeshBasicMaterial({ color: 0xffdf9e })
     );
     mesh.position.copy(pos);
+    mesh.rotation.z = tilt;
+    if (lit) mesh.layers.set(1);
     spaceGroup.add(mesh);
+    texturedBodies.push({ mesh, file });
     const lbl = textSprite(label, 'rgba(200,214,232,0.85)', radius * 6 + 90);
     lbl.position.copy(pos).multiplyScalar(1 + (radius * 2.2 + 40) / pos.length());
     spaceGroup.add(lbl);
     return mesh;
   }
 
-  // Sun: bright glow sprite in its true direction
-  const sunDir = earthPos.clone().negate();
-  const sunPos = skyPos(sunDir, 2600);
+  // Sun: textured sphere + soft glow sprite in its true direction
   const sc = document.createElement('canvas');
   sc.width = sc.height = 256;
-  const sg = sc.getContext('2d').createRadialGradient(128, 128, 0, 128, 128, 128);
-  sg.addColorStop(0, 'rgba(255,252,240,1)');
-  sg.addColorStop(0.18, 'rgba(255,236,180,0.95)');
-  sg.addColorStop(0.45, 'rgba(255,180,90,0.35)');
-  sg.addColorStop(1, 'rgba(255,150,60,0)');
   const sx = sc.getContext('2d');
+  const sg = sx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  sg.addColorStop(0, 'rgba(255,244,214,0.9)');
+  sg.addColorStop(0.3, 'rgba(255,214,140,0.5)');
+  sg.addColorStop(1, 'rgba(255,160,70,0)');
   sx.fillStyle = sg;
   sx.fillRect(0, 0, 256, 256);
-  const sunTex = new THREE.CanvasTexture(sc);
-  const sun = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: sunTex, transparent: true, depthWrite: false })
+  const glow = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: new THREE.CanvasTexture(sc),
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    })
   );
-  sun.scale.set(420, 420, 1);
-  sun.position.copy(sunPos);
-  spaceGroup.add(sun);
-  const sunLbl = textSprite('Sun', 'rgba(255,224,160,0.9)', 220);
-  sunLbl.position.copy(sunPos).multiplyScalar(0.9);
-  spaceGroup.add(sunLbl);
+  glow.scale.set(560, 560, 1);
+  glow.position.copy(sunPos);
+  spaceGroup.add(glow);
+  addBody(sunPos, 85, '2k_sun.jpg', 'Sun', { lit: false });
 
   // Moon: low-precision lunar position (direction good to ~1°)
   {
@@ -689,37 +709,70 @@ globe.scene().add(spaceGroup);
       Math.cos(bet) * Math.sin(lam),
       Math.sin(bet)
     );
-    addBody(skyPos(dir, 520), 26, 0xb8bcc4, 'Moon', 0.25);
+    addBody(skyPos(dir, 520), 26, '2k_moon.jpg', 'Moon');
   }
 
   // planets: geocentric direction = heliocentric(planet) - heliocentric(earth)
   const PLANETS = [
-    ['mercury', 0x9c9488, 9, 950],
-    ['venus', 0xe8d8a8, 14, 1050],
-    ['mars', 0xd97a52, 11, 1150],
-    ['jupiter', 0xd8b48a, 24, 1550],
-    ['saturn', 0xe0cfa0, 20, 1800],
+    ['mercury', '2k_mercury.jpg', 9, 950],
+    ['venus', '2k_venus_atmosphere.jpg', 14, 1050],
+    ['mars', '2k_mars.jpg', 11, 1150],
+    ['jupiter', '2k_jupiter.jpg', 24, 1550],
+    ['saturn', '2k_saturn.jpg', 20, 1800],
   ];
-  for (const [name, color, radius, dist] of PLANETS) {
+  let saturnRing = null;
+  for (const [name, file, radius, dist] of PLANETS) {
     const geo = helio(name).sub(earthPos);
     const pos = skyPos(geo, dist);
-    const mesh = addBody(pos, radius, color, name, 0.5);
+    const mesh = addBody(pos, radius, file, name, { tilt: 0.15 });
     if (name === 'saturn') {
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(radius * 1.4, radius * 2.2, 48),
+      const rg = new THREE.RingGeometry(radius * 1.35, radius * 2.3, 64);
+      // remap UVs radially so the ring strip texture wraps correctly
+      const rp = rg.attributes.position, ruv = rg.attributes.uv;
+      for (let i = 0; i < rp.count; i++) {
+        const rr = Math.hypot(rp.getX(i), rp.getY(i));
+        ruv.setXY(i, (rr - radius * 1.35) / (radius * 0.95), 0.5);
+      }
+      saturnRing = new THREE.Mesh(
+        rg,
         new THREE.MeshBasicMaterial({
-          color: 0xcbbd96, transparent: true, opacity: 0.55, side: THREE.DoubleSide,
+          color: 0xd8cba8, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+          depthWrite: false,
         })
       );
-      ring.rotation.x = Math.PI / 2.6;
-      mesh.add(ring);
+      saturnRing.rotation.x = Math.PI / 2.6;
+      mesh.add(saturnRing);
     }
   }
+
+  // lazy texture load on first reveal
+  let spaceTexLoaded = false;
+  function loadSpaceTextures() {
+    if (spaceTexLoaded) return;
+    spaceTexLoaded = true;
+    const loader = new THREE.TextureLoader();
+    for (const b of texturedBodies)
+      loader.load(`textures/planets/${b.file}`, (t) => {
+        t.colorSpace = THREE.SRGBColorSpace;
+        b.mesh.material.map = t;
+        b.mesh.material.color.set(0xffffff);
+        b.mesh.material.needsUpdate = true;
+      });
+    loader.load('textures/planets/2k_saturn_ring_alpha.png', (t) => {
+      t.colorSpace = THREE.SRGBColorSpace;
+      saturnRing.material.map = t;
+      saturnRing.material.color.set(0xffffff);
+      saturnRing.material.needsUpdate = true;
+    });
+  }
+
+  spaceBodies.push(...texturedBodies.map((b) => b.mesh));
 
   // fade the sky in as the camera pulls back
   function updateSpace() {
     const alt = globe.pointOfView().altitude ?? 2;
     spaceGroup.visible = alt > 2.9;
+    if (spaceGroup.visible) loadSpaceTextures();
   }
   controls.addEventListener('change', updateSpace);
   updateSpace();
@@ -729,6 +782,8 @@ globe.scene().add(spaceGroup);
 (function tick(t) {
   uniforms.uTime.value = t / 1000;
   if (satsOn && satParams) updateSats(t / 1000);
+  if (spaceGroup.visible)
+    for (const m of spaceBodies) m.rotation.y += 0.0006;
   requestAnimationFrame(tick);
 })(0);
 
