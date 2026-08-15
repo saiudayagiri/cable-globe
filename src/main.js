@@ -571,6 +571,160 @@ function renderSatPanel(s) {
     `<span class="chip">live CelesTrak elements · position approximate</span>`;
 }
 
+// ---------- the wider sky: Sun, Moon and planets at real current directions ----------
+// Directions computed from standard approximate orbital elements at today's
+// date; distances compressed to fit the scene (the real Sun is ~23,000 globe
+// radii away). Fades in as you zoom out.
+const spaceGroup = new THREE.Group();
+spaceGroup.visible = false;
+globe.scene().add(spaceGroup);
+{
+  const cam = globe.camera();
+  cam.far = 12000;
+  cam.updateProjectionMatrix();
+  controls.maxDistance = 2400;
+
+  const D = Math.PI / 180;
+  const T = _d2000Now / 36525; // Julian centuries since J2000
+  const EPS = 23.4393 * D; // obliquity
+
+  // heliocentric position from mean Keplerian elements [a, e, i, L, peri, node] + rates
+  const EL = {
+    mercury: [0.38710, 0.20563, 7.005, 252.251, 77.456, 48.331, 149472.674],
+    venus: [0.72333, 0.00677, 3.395, 181.980, 131.564, 76.680, 58517.816],
+    earth: [1.00000, 0.01671, 0, 100.464, 102.937, 0, 35999.372],
+    mars: [1.52371, 0.09339, 1.850, 355.447, 336.041, 49.558, 19140.303],
+    jupiter: [5.20289, 0.04839, 1.304, 34.397, 14.728, 100.474, 3034.746],
+    saturn: [9.53707, 0.05386, 2.486, 49.954, 92.599, 113.662, 1222.494],
+  };
+  function helio(name) {
+    const [a, e, i0, L0, peri, node, rate] = EL[name];
+    const L = (L0 + rate * T) * D, w = peri * D, O = node * D, i = i0 * D;
+    let M = L - w;
+    let E = M;
+    for (let k = 0; k < 5; k++) E = E - (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+    const nu = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
+    const r = a * (1 - e * Math.cos(E));
+    const u = nu + w - O;
+    return new THREE.Vector3(
+      r * (Math.cos(O) * Math.cos(u) - Math.sin(O) * Math.sin(u) * Math.cos(i)),
+      r * (Math.sin(O) * Math.cos(u) + Math.cos(O) * Math.sin(u) * Math.cos(i)),
+      r * Math.sin(u) * Math.sin(i)
+    );
+  }
+  const earthPos = helio('earth');
+
+  // ecliptic direction -> scene position at chosen display distance
+  function skyPos(v, dist) {
+    const u = v.clone().normalize();
+    const yq = u.y * Math.cos(EPS) - u.z * Math.sin(EPS); // ecliptic -> equatorial
+    const zq = u.y * Math.sin(EPS) + u.z * Math.cos(EPS);
+    const ct = Math.cos(GMST0), st = Math.sin(GMST0); // equatorial -> Earth-fixed
+    return ecefToScene(u.x * ct + yq * st, -u.x * st + yq * ct, zq, dist, new THREE.Vector3());
+  }
+
+  function textSprite(text, color, w) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const x = c.getContext('2d');
+    x.font = '600 30px -apple-system, sans-serif';
+    x.textAlign = 'center';
+    x.fillStyle = color;
+    x.fillText(text.toUpperCase(), 128, 40);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })
+    );
+    sp.scale.set(w, w / 4, 1);
+    return sp;
+  }
+
+  function addBody(pos, radius, color, label, emissive = 0.6) {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 24, 24),
+      new THREE.MeshStandardMaterial({
+        color, emissive: color, emissiveIntensity: emissive, transparent: true,
+      })
+    );
+    mesh.position.copy(pos);
+    spaceGroup.add(mesh);
+    const lbl = textSprite(label, 'rgba(200,214,232,0.85)', radius * 6 + 90);
+    lbl.position.copy(pos).multiplyScalar(1 + (radius * 2.2 + 40) / pos.length());
+    spaceGroup.add(lbl);
+    return mesh;
+  }
+
+  // Sun: bright glow sprite in its true direction
+  const sunDir = earthPos.clone().negate();
+  const sunPos = skyPos(sunDir, 2600);
+  const sc = document.createElement('canvas');
+  sc.width = sc.height = 256;
+  const sg = sc.getContext('2d').createRadialGradient(128, 128, 0, 128, 128, 128);
+  sg.addColorStop(0, 'rgba(255,252,240,1)');
+  sg.addColorStop(0.18, 'rgba(255,236,180,0.95)');
+  sg.addColorStop(0.45, 'rgba(255,180,90,0.35)');
+  sg.addColorStop(1, 'rgba(255,150,60,0)');
+  const sx = sc.getContext('2d');
+  sx.fillStyle = sg;
+  sx.fillRect(0, 0, 256, 256);
+  const sunTex = new THREE.CanvasTexture(sc);
+  const sun = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: sunTex, transparent: true, depthWrite: false })
+  );
+  sun.scale.set(420, 420, 1);
+  sun.position.copy(sunPos);
+  spaceGroup.add(sun);
+  const sunLbl = textSprite('Sun', 'rgba(255,224,160,0.9)', 220);
+  sunLbl.position.copy(sunPos).multiplyScalar(0.9);
+  spaceGroup.add(sunLbl);
+
+  // Moon: low-precision lunar position (direction good to ~1°)
+  {
+    const d = _d2000Now;
+    const lam = (218.316 + 13.176396 * d) * D + 6.289 * D * Math.sin((134.963 + 13.064993 * d) * D);
+    const bet = 5.128 * D * Math.sin((93.272 + 13.22935 * d) * D);
+    const dir = new THREE.Vector3(
+      Math.cos(bet) * Math.cos(lam),
+      Math.cos(bet) * Math.sin(lam),
+      Math.sin(bet)
+    );
+    addBody(skyPos(dir, 520), 26, 0xb8bcc4, 'Moon', 0.25);
+  }
+
+  // planets: geocentric direction = heliocentric(planet) - heliocentric(earth)
+  const PLANETS = [
+    ['mercury', 0x9c9488, 9, 950],
+    ['venus', 0xe8d8a8, 14, 1050],
+    ['mars', 0xd97a52, 11, 1150],
+    ['jupiter', 0xd8b48a, 24, 1550],
+    ['saturn', 0xe0cfa0, 20, 1800],
+  ];
+  for (const [name, color, radius, dist] of PLANETS) {
+    const geo = helio(name).sub(earthPos);
+    const pos = skyPos(geo, dist);
+    const mesh = addBody(pos, radius, color, name, 0.5);
+    if (name === 'saturn') {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(radius * 1.4, radius * 2.2, 48),
+        new THREE.MeshBasicMaterial({
+          color: 0xcbbd96, transparent: true, opacity: 0.55, side: THREE.DoubleSide,
+        })
+      );
+      ring.rotation.x = Math.PI / 2.6;
+      mesh.add(ring);
+    }
+  }
+
+  // fade the sky in as the camera pulls back
+  function updateSpace() {
+    const alt = globe.pointOfView().altitude ?? 2;
+    spaceGroup.visible = alt > 2.9;
+  }
+  controls.addEventListener('change', updateSpace);
+  updateSpace();
+}
+
 // pulse clock
 (function tick(t) {
   uniforms.uTime.value = t / 1000;
