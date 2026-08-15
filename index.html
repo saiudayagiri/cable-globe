@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cable Atlas — the internet's undersea backbone</title>
+  <meta name="description" content="An interactive 3D globe of the world's submarine internet cables. Real data, 1989–2029." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌐</text></svg>" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="globe"></div>
+
+  <header id="hud-top">
+    <div id="brand">
+      <h1>Cable Atlas</h1>
+      <p>the internet's undersea backbone · <span id="stat-line">…</span></p>
+    </div>
+    <div id="search-wrap">
+      <input id="search" type="text" placeholder="Search cables, countries, owners…" autocomplete="off" spellcheck="false" />
+      <ul id="search-results" hidden></ul>
+    </div>
+  </header>
+
+  <aside id="panel" hidden>
+    <button id="panel-close" aria-label="Close">×</button>
+    <div id="panel-accent"></div>
+    <h2 id="panel-name"></h2>
+    <div id="panel-badges"></div>
+    <dl id="panel-stats"></dl>
+    <div id="panel-owners"></div>
+    <details id="panel-lps-wrap" open>
+      <summary>Landing points</summary>
+      <ul id="panel-lps"></ul>
+    </details>
+    <a id="panel-url" target="_blank" rel="noopener" hidden>Official site ↗</a>
+  </aside>
+
+  <footer id="hud-bottom">
+    <div id="timeline">
+      <button id="play" aria-label="Play timeline">▶</button>
+      <input id="year" type="range" min="1989" max="2030" value="2030" step="1" />
+      <div id="year-readout"><span id="year-label">All years</span><span id="year-count"></span></div>
+    </div>
+    <p id="hint">drag to explore · scroll to zoom · click a cable</p>
+    <p id="credit">Data © <a href="https://www.submarinecablemap.com" target="_blank" rel="noopener">TeleGeography</a> · non-commercial</p>
+  </footer>
+
+  <div id="tooltip" hidden></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
