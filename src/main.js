@@ -213,14 +213,31 @@ const lpMat = new THREE.ShaderMaterial({
 });
 globe.scene().add(new THREE.Points(lpGeom, lpMat));
 
-// ---------- satellites (real CelesTrak orbits, toggleable) ----------
-const SAT_TIME_SCALE = 60; // 1 real second = 1 orbital minute, so LEO orbits are visible
-let satsOn = false, satsPref = false, satParams = null, satPosAttr = null;
+// ---------- satellites: real CelesTrak elements, Kepler-propagated ----------
+// Positions are propagated from each satellite's epoch and aligned with real
+// Earth rotation (GMST), so GEO sats sit over their true longitudes and the
+// ISS is where it actually is. Time runs 60x so orbits are visible.
+const SAT_TIME_SCALE = 60;
+const EARTH_ROT = (2 * Math.PI) / 1436.068; // rad per sidereal minute
+let satsOn = false, satsPref = false, satParams = null, satMeta = null, satPosAttr = null;
+let selectedSat = null, orbitLine = null, suppressGlobeClickUntil = 0;
 const satsGroup = new THREE.Group();
 satsGroup.visible = false;
 globe.scene().add(satsGroup);
 const activeBeams = [];
 let lastBeam = 0;
+
+// scene basis for ECEF axes: x -> (0°N,0°E), y -> (0°N,90°E), z -> north pole
+const _bx = new THREE.Vector3(), _by = new THREE.Vector3(), _bz = new THREE.Vector3();
+{
+  const a = globe.getCoords(0, 0, 0), b = globe.getCoords(0, 90, 0), c = globe.getCoords(90, 0, 0);
+  _bx.set(a.x, a.y, a.z).normalize();
+  _by.set(b.x, b.y, b.z).normalize();
+  _bz.set(c.x, c.y, c.z).normalize();
+}
+// GMST at page load (radians)
+const _d2000Now = Date.now() / 86400000 + 2440587.5 - 2451545.0;
+const GMST0 = (((280.46061837 + 360.98564736629 * _d2000Now) % 360) * Math.PI) / 180;
 
 // a tiny drawn satellite (solar wings + body + dish) so it reads as a
 // spacecraft, not another star
@@ -260,14 +277,18 @@ function satTexture() {
 
 async function initSats() {
   const data = await fetch('data/satellites.json').then((r) => r.json());
+  satMeta = data;
   const D = Math.PI / 180;
   satParams = data.map((s) => ({
     // compress display altitude so LEO, MEO and GEO all fit in frame
     r: 100 * (1 + 0.5 * Math.pow(s.a / 6371, 0.6)),
     i: s.i * D,
     o: s.o * D,
-    m: s.m * D,
-    w: (2 * Math.PI) / (s.p * 60),
+    w: s.w * D,
+    e: s.e,
+    m0: s.m * D,
+    n: (2 * Math.PI) / s.p, // rad per minute
+    dt0: (_d2000Now - s.ep) * 1440, // minutes from element epoch to page load
   }));
   satPosAttr = new THREE.BufferAttribute(new Float32Array(satParams.length * 3), 3);
   const geom = new THREE.BufferGeometry();
@@ -285,6 +306,58 @@ async function initSats() {
       })
     )
   );
+  // orbit path shown for the selected satellite
+  const orbitGeom = new THREE.BufferGeometry();
+  orbitGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(128 * 3), 3));
+  orbitLine = new THREE.LineLoop(
+    orbitGeom,
+    new THREE.LineBasicMaterial({
+      color: 0x9fd8ff,
+      transparent: true,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+  );
+  orbitLine.visible = false;
+  satsGroup.add(orbitLine);
+}
+
+// ECEF unit vector -> scene position (writes into out, scaled by r)
+function ecefToScene(x, y, z, r, out) {
+  return out
+    .set(0, 0, 0)
+    .addScaledVector(_bx, x * r)
+    .addScaledVector(_by, y * r)
+    .addScaledVector(_bz, z * r);
+}
+
+// position of satellite k at visual time tMin, written into out
+function computeSatPos(k, tMin, out, nuOverride = null) {
+  const s = satParams[k];
+  let nu;
+  if (nuOverride === null) {
+    const M = s.m0 + s.n * (s.dt0 + tMin);
+    let E = M;
+    for (let j = 0; j < 4; j++)
+      E = E - (E - s.e * Math.sin(E) - M) / (1 - s.e * Math.cos(E));
+    nu = 2 * Math.atan2(
+      Math.sqrt(1 + s.e) * Math.sin(E / 2),
+      Math.sqrt(1 - s.e) * Math.cos(E / 2)
+    );
+  } else nu = nuOverride;
+  const u = s.w + nu;
+  const cu = Math.cos(u), su = Math.sin(u);
+  const cO = Math.cos(s.o), sO = Math.sin(s.o);
+  const ci = Math.cos(s.i), si = Math.sin(s.i);
+  // ECI unit vector
+  const xi = cO * cu - sO * su * ci;
+  const yi = sO * cu + cO * su * ci;
+  const zi = su * si;
+  // rotate by Earth angle -> ECEF
+  const th = GMST0 + EARTH_ROT * tMin;
+  const ct = Math.cos(th), st = Math.sin(th);
+  return ecefToScene(xi * ct + yi * st, -xi * st + yi * ct, zi, s.r, out);
 }
 
 async function setSats(on) {
@@ -337,22 +410,24 @@ function spawnBeam() {
   activeBeams.push({ k, line, dot, ground, t0: performance.now() / 1000, up: Math.random() < 0.5 });
 }
 
-const _satV = new THREE.Vector3(), _beamV = new THREE.Vector3();
+const _satV = new THREE.Vector3(), _beamV = new THREE.Vector3(), _orbV = new THREE.Vector3();
 function updateSats(tSec) {
-  const T = tSec * SAT_TIME_SCALE;
+  const tMin = (tSec * SAT_TIME_SCALE) / 60;
   for (let k = 0; k < satParams.length; k++) {
-    const s = satParams[k];
-    const th = s.m + s.w * T;
-    const x0 = Math.cos(th) * s.r, z0 = Math.sin(th) * s.r;
-    const y1 = -z0 * Math.sin(s.i), z1 = z0 * Math.cos(s.i);
-    satPosAttr.setXYZ(
-      k,
-      x0 * Math.cos(s.o) + z1 * Math.sin(s.o),
-      y1,
-      -x0 * Math.sin(s.o) + z1 * Math.cos(s.o)
-    );
+    computeSatPos(k, tMin, _satV);
+    satPosAttr.setXYZ(k, _satV.x, _satV.y, _satV.z);
   }
   satPosAttr.needsUpdate = true;
+
+  // orbit path of the selected satellite (recomputed as Earth turns)
+  if (selectedSat !== null && orbitLine) {
+    const attr = orbitLine.geometry.attributes.position;
+    for (let j = 0; j < 128; j++) {
+      computeSatPos(selectedSat, tMin, _orbV, (j / 128) * 2 * Math.PI);
+      attr.setXYZ(j, _orbV.x, _orbV.y, _orbV.z);
+    }
+    attr.needsUpdate = true;
+  }
 
   // occasional light traveling between ground and a satellite
   if (tSec - lastBeam > 2.4 && activeBeams.length < 2) {
@@ -378,6 +453,64 @@ function updateSats(tSec) {
     b.dot.geometry.attributes.position.needsUpdate = true;
     b.dot.material.opacity = Math.sin(Math.PI * u);
   }
+}
+
+// screen-space picking of satellites (with globe occlusion test)
+const _pickV = new THREE.Vector3(), _camV = new THREE.Vector3(), _rayV = new THREE.Vector3(), _occV = new THREE.Vector3();
+function pickSat(clientX, clientY) {
+  if (!satsOn || !satParams) return null;
+  const cam = globe.camera();
+  cam.getWorldPosition(_camV);
+  const rect = globeEl.getBoundingClientRect();
+  let best = null, bestD2 = 14 * 14;
+  for (let k = 0; k < satParams.length; k++) {
+    _pickV.set(satPosAttr.getX(k), satPosAttr.getY(k), satPosAttr.getZ(k));
+    // occluded by the globe? (closest approach of cam->sat ray to Earth's center)
+    _rayV.copy(_pickV).sub(_camV);
+    const dist = _rayV.length();
+    _rayV.divideScalar(dist);
+    const tc = -_camV.dot(_rayV);
+    if (tc > 0 && tc < dist) {
+      _occV.copy(_camV).addScaledVector(_rayV, tc);
+      if (_occV.lengthSq() < 100 * 100) continue;
+    }
+    _pickV.project(cam);
+    if (_pickV.z > 1) continue;
+    const px = rect.left + (_pickV.x * 0.5 + 0.5) * rect.width;
+    const py = rect.top + (-_pickV.y * 0.5 + 0.5) * rect.height;
+    const d2 = (px - clientX) ** 2 + (py - clientY) ** 2;
+    if (d2 < bestD2) { bestD2 = d2; best = k; }
+  }
+  return best;
+}
+
+function selectSatellite(k) {
+  clearSelection();
+  selectedSat = k;
+  if (orbitLine) orbitLine.visible = true;
+  renderSatPanel(satMeta[k]);
+}
+
+function renderSatPanel(s) {
+  panelBase(s.n);
+  $('panel-accent').style.background = '#9fd8ff';
+  $('panel-badges').innerHTML = `<span class="badge">${s.g}</span><span class="badge">NORAD ${s.id}</span>`;
+  const orbitsPerDay = (1440 / s.p).toFixed(1);
+  const period = s.p >= 120 ? `${(s.p / 60).toFixed(1)} h` : `${Math.round(s.p)} min`;
+  const stats = [
+    ['Altitude', `${s.a.toLocaleString()} km`],
+    ['Period', period],
+    ['Inclination', `${s.i.toFixed(1)}°`],
+    ['Orbits / day', orbitsPerDay],
+  ];
+  $('panel-stats').innerHTML = stats
+    .map(([k2, v]) => `<div><dt>${k2}</dt><dd>${v}</dd></div>`)
+    .join('');
+  const launchYear = /^(\d{4})/.exec(s.d)?.[1];
+  $('panel-owners').innerHTML =
+    (launchYear ? `<span class="chip">Launched ${launchYear}</span>` : '') +
+    `<span class="chip">${s.d}</span>` +
+    `<span class="chip">live CelesTrak elements · position approximate</span>`;
 }
 
 // pulse clock
@@ -568,6 +701,8 @@ function clearSelection() {
   applySel();
   globe.ringsData([]);
   map2dApi?.setLpHighlight(null);
+  selectedSat = null;
+  if (orbitLine) orbitLine.visible = false;
   $('panel').hidden = true;
 }
 
@@ -708,11 +843,24 @@ $('panel-close').onclick = () => clearSelection();
 
 // ---------- pointer interaction ----------
 globe.onGlobeClick(({ lat, lng }) => {
+  if (performance.now() < suppressGlobeClickUntil) return; // satellite click won
   const thr = pickThreshold();
   const lp = nearestLandingPoint(lat, lng, Math.min(0.45, thr * 0.4));
   if (lp && (lpCables.get(lp.id)?.length ?? 0) > 0) return selectHub(lp, false);
   const ci = nearestCable(lat, lng, thr);
   ci === null ? clearSelection() : selectCable(ci, false);
+});
+
+// satellite clicks (satellites float off the globe, so onGlobeClick misses them)
+let downX = 0, downY = 0;
+globeEl.addEventListener('pointerdown', (ev) => { downX = ev.clientX; downY = ev.clientY; });
+globeEl.addEventListener('click', (ev) => {
+  if (Math.hypot(ev.clientX - downX, ev.clientY - downY) > 6) return; // drag, not click
+  const k = pickSat(ev.clientX, ev.clientY);
+  if (k !== null) {
+    suppressGlobeClickUntil = performance.now() + 200;
+    selectSatellite(k);
+  }
 });
 
 function setHover(ci) {
@@ -736,6 +884,18 @@ globeEl.addEventListener('pointermove', (ev) => {
   if (rafHover) return;
   rafHover = requestAnimationFrame(() => {
     rafHover = 0;
+    // satellites first — they float above the globe
+    const k = pickSat(ev.clientX, ev.clientY);
+    if (k !== null) {
+      setHover(null);
+      const s = satMeta[k];
+      tooltip.innerHTML = `${s.n} <span class="t-meta">${s.g} · ${s.a.toLocaleString()} km</span>`;
+      tooltip.style.left = `${Math.min(ev.clientX + 14, innerWidth - 220)}px`;
+      tooltip.style.top = `${ev.clientY + 14}px`;
+      tooltip.hidden = false;
+      globeEl.classList.add('cable-hover');
+      return;
+    }
     const coords = globe.toGlobeCoords(ev.clientX, ev.clientY);
     const ci = coords ? nearestCable(coords.lat, coords.lng, pickThreshold()) : null;
     setHover(ci);
@@ -1228,6 +1388,15 @@ else if (location.hash === '#discover') $('discover').hidden = false;
 else if (location.hash === '#satellite') viewBtn.onclick();
 else if (location.hash === '#2d') toggle2D();
 else if (location.hash === '#satellites') satsBtn.onclick();
+else if (location.hash.startsWith('#sat=')) {
+  const q = decodeURIComponent(location.hash.slice(5)).toLowerCase();
+  satsPref = true;
+  satsBtn.classList.add('on');
+  setSats(true).then(() => {
+    const k = satMeta.findIndex((s) => s.n.toLowerCase().includes(q));
+    if (k >= 0) selectSatellite(k);
+  });
+}
 else if (location.hash.startsWith('#country=')) {
   const q = decodeURIComponent(location.hash.slice(9)).toLowerCase();
   const name = countryNames.find((n) => n.toLowerCase() === q);
