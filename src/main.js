@@ -838,10 +838,39 @@ const TOUR = [
   },
 ];
 
-let tourIdx = 0, tourTimer = 0;
+let tourIdx = 0, tourTimer = 0, tourSeq = 0;
+
+// ----- narration (browser speech synthesis — no files, no external service) -----
+const synth = window.speechSynthesis ?? null;
+let narrVoice = null;
+function pickVoice() {
+  const vs = synth?.getVoices() ?? [];
+  narrVoice =
+    vs.find((v) => /Samantha|Google US English|en.*Natural/i.test(v.name)) ||
+    vs.find((v) => v.lang?.startsWith('en')) ||
+    vs[0] || null;
+}
+pickVoice();
+synth?.addEventListener?.('voiceschanged', pickVoice);
+
+let voiceOn = localStorage.getItem('tourVoice') !== 'off';
+const voiceBtn = $('tour-voice');
+const syncVoiceBtn = () => {
+  voiceBtn.textContent = voiceOn ? '🔊' : '🔇';
+  voiceBtn.title = voiceOn ? 'Mute narration' : 'Unmute narration';
+};
+syncVoiceBtn();
+voiceBtn.onclick = () => {
+  voiceOn = !voiceOn;
+  localStorage.setItem('tourVoice', voiceOn ? 'on' : 'off');
+  syncVoiceBtn();
+  synth?.cancel();
+  if (voiceOn && !$('tour').hidden) renderTourStop(); // restart current stop with voice
+};
 
 function renderTourStop() {
   const s = TOUR[tourIdx];
+  const seq = ++tourSeq;
   $('tour-title').textContent = s.title;
   $('tour-text').textContent = s.text;
   $('tour-dots').innerHTML = TOUR.map(
@@ -851,10 +880,38 @@ function renderTourStop() {
   tourSpin = s.spin;
   updateRotate();
   s.run();
+
   clearTimeout(tourTimer);
-  tourTimer = setTimeout(() => {
+  synth?.cancel();
+  const goNext = () => {
+    if (seq !== tourSeq) return;
     tourIdx < TOUR.length - 1 ? goTour(tourIdx + 1) : endTour();
-  }, s.dur);
+  };
+
+  if (voiceOn && synth && narrVoice) {
+    const u = new SpeechSynthesisUtterance(`${s.title}. ${s.text}`);
+    u.voice = narrVoice;
+    u.rate = 1.02;
+    const t0 = performance.now();
+    // advance when narration ends AND the visual has had its minimum time
+    u.onend = () => {
+      if (seq !== tourSeq) return;
+      clearTimeout(tourTimer);
+      const wait = Math.max(800, s.dur - (performance.now() - t0));
+      tourTimer = setTimeout(goNext, wait);
+    };
+    // if speech is blocked (e.g. #tour deep link before any click), fall back
+    u.onerror = () => {
+      if (seq !== tourSeq) return;
+      clearTimeout(tourTimer);
+      tourTimer = setTimeout(goNext, Math.max(800, s.dur - (performance.now() - t0)));
+    };
+    // safety net in case neither end nor error ever fires
+    tourTimer = setTimeout(goNext, s.dur + 20000);
+    synth.speak(u);
+  } else {
+    tourTimer = setTimeout(goNext, s.dur);
+  }
 }
 function goTour(i) { tourIdx = i; renderTourStop(); }
 function startTour() {
@@ -863,7 +920,9 @@ function startTour() {
   goTour(0);
 }
 function endTour() {
+  tourSeq++; // invalidate pending narration/timer callbacks
   clearTimeout(tourTimer);
+  synth?.cancel();
   $('tour').hidden = true;
   $('hint').hidden = false;
   tourSpin = null;

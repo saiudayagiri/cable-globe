@@ -166,7 +166,16 @@ body {
   cursor: pointer;
 }
 #tour-close:hover { color: var(--ink); }
-#tour h3 { font-size: 0.95rem; margin-bottom: 0.35rem; padding-right: 1.2rem; }
+#tour-voice {
+  position: absolute;
+  top: 0.62rem; right: 2.4rem;
+  background: none; border: none;
+  font-size: 0.85rem;
+  cursor: pointer;
+  filter: grayscale(0.3);
+}
+#tour-voice:hover { filter: none; }
+#tour h3 { font-size: 0.95rem; margin-bottom: 0.35rem; padding-right: 3.4rem; }
 #tour p { font-size: 0.8rem; color: var(--ink-2); line-height: 1.45; }
 #tour-nav {
   display: flex;
