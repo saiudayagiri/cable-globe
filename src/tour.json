@@ -1,50 +1,50 @@
 [
   {
-    "title": "The hidden backbone",
-    "text": "Nearly all intercontinental internet traffic — not satellites, but over a million kilometres of fibre on the ocean floor. Every glowing thread is a real cable, every pulse a river of data.",
-    "dur": 12000,
+    "title": "Your internet is underwater",
+    "text": "The series you're streaming right now. The reels you scroll at 2am. Your tweets, your WhatsApp texts, this very page. You'd think they fly up to satellites and back. They don't. Almost everything you do online travels through physical cables lying on the ocean floor — these glowing threads. This is your internet.",
+    "dur": 21000,
     "spin": true
   },
   {
     "title": "The transatlantic highway",
-    "text": "The busiest deep-sea corridor on Earth. Cables like MAREA carry over 200 terabits per second between North America and Europe — enough to stream millions of videos at once.",
-    "dur": 14000,
+    "text": "When you watch an American show from Europe, your click crosses the Atlantic through one of these cables and the video streams back — in about sixty milliseconds. Cables like MAREA move over 200 terabits every second. Millions of people's movies, calls and games, all inside a bundle of fibre thinner than your arm.",
+    "dur": 18000,
     "spin": false
   },
   {
     "title": "Egypt: the internet's chokepoint",
-    "text": "The shortest path between Europe and Asia squeezes through the Suez Canal and Red Sea. A few hundred kilometres of desert coastline carry a huge share of all Europe to Asia traffic.",
-    "dur": 14000,
+    "text": "Text someone in India from London, and your message almost certainly squeezes through here — the Suez Canal and the Red Sea. The shortest path between Europe and Asia funnels a huge share of the world's traffic across a few hundred kilometres of Egyptian desert. One anchor drag here, and half the world feels it.",
+    "dur": 18000,
     "spin": false
   },
   {
     "title": "2Africa: the longest cable ever built",
-    "text": "45,000 kilometres — longer than the circumference of the Earth. It rings the entire African continent, built by Meta, Vodafone, Orange and partners to connect three billion people.",
-    "dur": 14000,
+    "text": "45,000 kilometres — longer than a lap around the Earth. It rings the entire African continent, built by Meta, Vodafone, Orange and partners. When it's fully lit, three billion people's posts, payments and video calls will ride on this single loop.",
+    "dur": 16000,
     "spin": false
   },
   {
     "title": "Big Tech lays its own",
-    "text": "Google, Meta, Microsoft and Amazon used to rent capacity. Now they build their own cables — hyperscalers fund most new transoceanic fibre laid today.",
-    "dur": 13000,
+    "text": "Every photo you put on Instagram, every search you type — Google, Meta, Microsoft and Amazon used to rent the pipes that carry them. Not anymore. Now they lay their own cables across entire oceans. Most new transoceanic fibre today is funded by the same companies whose apps fill your home screen.",
+    "dur": 17000,
     "spin": true
   },
   {
     "title": "A single thread: Tonga",
-    "text": "Some nations hang by one cable. When the 2022 Hunga Tonga volcano severed Tonga's only link, the whole country went dark for weeks — repaired by a single cable ship.",
-    "dur": 13000,
+    "text": "Now imagine your whole country hanging from one cable. That's Tonga. When a volcano erupted under the Pacific in 2022, it snapped their only link — and one hundred thousand people simply went offline. No banking, no news, no calls home. For five weeks, until a single ship found the cable and spliced it back together.",
+    "dur": 19000,
     "spin": false
   },
   {
     "title": "Watch it grow: 1989 to today",
-    "text": "From the first fibre systems to the planned routes of 2029. Four decades of the internet physically wiring itself around the planet.",
+    "text": "In 1989 there were just a handful of fibre systems. Then email. Then the web. Then video, then streaming, then AI. Watch four decades of the internet physically wiring itself around the planet, cable by cable, all the way to the routes planned for 2029.",
     "dur": 21000,
     "spin": true
   },
   {
     "title": "Now explore",
-    "text": "Click any cable or landing station. Press slash to search. Open Discover for chokepoints, hubs and records. Scrub the timeline. The whole map is real, current data.",
-    "dur": 12000,
+    "text": "So next time a reel loads instantly, remember — it probably crossed an ocean to reach you. Click any cable to see who built it. Click a landing station. Search your country. Scrub the timeline. Everything here is real, current data. Go find the cable your internet rides on.",
+    "dur": 18000,
     "spin": true
   }
 ]

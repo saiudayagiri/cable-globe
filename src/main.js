@@ -213,9 +213,141 @@ const lpMat = new THREE.ShaderMaterial({
 });
 globe.scene().add(new THREE.Points(lpGeom, lpMat));
 
+// ---------- satellites (real CelesTrak orbits, toggleable) ----------
+const SAT_TIME_SCALE = 60; // 1 real second = 1 orbital minute, so LEO orbits are visible
+let satsOn = false, satsPref = false, satParams = null, satPosAttr = null;
+const satsGroup = new THREE.Group();
+satsGroup.visible = false;
+globe.scene().add(satsGroup);
+const activeBeams = [];
+let lastBeam = 0;
+
+async function initSats() {
+  const data = await fetch('data/satellites.json').then((r) => r.json());
+  const D = Math.PI / 180;
+  satParams = data.map((s) => ({
+    // compress display altitude so LEO, MEO and GEO all fit in frame
+    r: 100 * (1 + 0.5 * Math.pow(s.a / 6371, 0.6)),
+    i: s.i * D,
+    o: s.o * D,
+    m: s.m * D,
+    w: (2 * Math.PI) / (s.p * 60),
+  }));
+  satPosAttr = new THREE.BufferAttribute(new Float32Array(satParams.length * 3), 3);
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', satPosAttr);
+  satsGroup.add(
+    new THREE.Points(
+      geom,
+      new THREE.PointsMaterial({
+        color: 0xcfe8ff,
+        size: 2.4,
+        sizeAttenuation: false,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+      })
+    )
+  );
+}
+
+async function setSats(on) {
+  if (on && !satParams) await initSats();
+  satsOn = on;
+  satsGroup.visible = on;
+}
+const satsBtn = $('ctl-sats');
+satsBtn.onclick = () => {
+  satsPref = !satsPref;
+  satsBtn.classList.toggle('on', satsPref);
+  setSats(satsPref);
+};
+
+function satPos(k, out) {
+  return out.set(satPosAttr.getX(k), satPosAttr.getY(k), satPosAttr.getZ(k));
+}
+
+function spawnBeam() {
+  const k = Math.floor(Math.random() * satParams.length);
+  const lp = landingPoints[Math.floor(Math.random() * landingPoints.length)];
+  const g = globe.getCoords(lp.lat, lp.lng, 0.005);
+  const ground = new THREE.Vector3(g.x, g.y, g.z);
+  const lineGeom = new THREE.BufferGeometry().setFromPoints([ground, ground.clone()]);
+  const line = new THREE.Line(
+    lineGeom,
+    new THREE.LineBasicMaterial({
+      color: 0x9fd8ff,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+  );
+  const dotGeom = new THREE.BufferGeometry();
+  dotGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
+  const dot = new THREE.Points(
+    dotGeom,
+    new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 3.5,
+      sizeAttenuation: false,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+  );
+  satsGroup.add(line, dot);
+  activeBeams.push({ k, line, dot, ground, t0: performance.now() / 1000, up: Math.random() < 0.5 });
+}
+
+const _satV = new THREE.Vector3(), _beamV = new THREE.Vector3();
+function updateSats(tSec) {
+  const T = tSec * SAT_TIME_SCALE;
+  for (let k = 0; k < satParams.length; k++) {
+    const s = satParams[k];
+    const th = s.m + s.w * T;
+    const x0 = Math.cos(th) * s.r, z0 = Math.sin(th) * s.r;
+    const y1 = -z0 * Math.sin(s.i), z1 = z0 * Math.cos(s.i);
+    satPosAttr.setXYZ(
+      k,
+      x0 * Math.cos(s.o) + z1 * Math.sin(s.o),
+      y1,
+      -x0 * Math.sin(s.o) + z1 * Math.cos(s.o)
+    );
+  }
+  satPosAttr.needsUpdate = true;
+
+  // occasional light traveling between ground and a satellite
+  if (tSec - lastBeam > 2.4 && activeBeams.length < 2) {
+    lastBeam = tSec;
+    spawnBeam();
+  }
+  const now = performance.now() / 1000;
+  for (let i = activeBeams.length - 1; i >= 0; i--) {
+    const b = activeBeams[i];
+    const u = (now - b.t0) / 1.5;
+    if (u >= 1) {
+      satsGroup.remove(b.line, b.dot);
+      b.line.geometry.dispose();
+      b.dot.geometry.dispose();
+      activeBeams.splice(i, 1);
+      continue;
+    }
+    satPos(b.k, _satV);
+    b.line.geometry.setFromPoints([b.ground, _satV]);
+    b.line.material.opacity = Math.sin(Math.PI * u) * 0.3;
+    _beamV.copy(b.ground).lerp(_satV, b.up ? u : 1 - u);
+    b.dot.geometry.attributes.position.setXYZ(0, _beamV.x, _beamV.y, _beamV.z);
+    b.dot.geometry.attributes.position.needsUpdate = true;
+    b.dot.material.opacity = Math.sin(Math.PI * u);
+  }
+}
+
 // pulse clock
 (function tick(t) {
   uniforms.uTime.value = t / 1000;
+  if (satsOn && satParams) updateSats(t / 1000);
   requestAnimationFrame(tick);
 })(0);
 
@@ -295,7 +427,7 @@ let dayView = false;
 viewBtn.onclick = () => {
   dayView = !dayView;
   globe.globeImageUrl(dayView ? 'textures/earth-day.jpg' : 'textures/earth-night.jpg');
-  viewBtn.textContent = dayView ? '🌙 night' : '🛰 satellite';
+  viewBtn.textContent = dayView ? '🌙 night' : '☀️ day';
 };
 
 const bordersBtn = $('ctl-borders');
@@ -303,6 +435,84 @@ bordersBtn.onclick = () => {
   borderLines.visible = !borderLines.visible;
   bordersBtn.classList.toggle('on', borderLines.visible);
 };
+
+// ---------- 2D map toggle (module lazy-loads on first use) ----------
+let map2dApi = null, is2D = false;
+const dimBtn = $('ctl-dim');
+
+// route camera flights to whichever view is active
+function flyView(pov, ms = 1100) {
+  if (is2D && map2dApi) map2dApi.flyTo(pov, ms);
+  else globe.pointOfView(pov, ms);
+}
+
+function sync2DSelection() {
+  map2dApi?.setSelection(selSet.size ? [...selSet].map((ci) => cables[ci].id) : null);
+}
+
+async function toggle2D() {
+  if (!is2D) {
+    if (!map2dApi) {
+      dimBtn.disabled = true;
+      dimBtn.textContent = '… loading';
+      // map needs a laid-out container to finish its first render
+      $('map2d').hidden = false;
+      $('map2d').style.visibility = 'hidden';
+      try {
+        const { createMap2D } = await import('./map2d.js');
+        map2dApi = await createMap2D({
+          container: $('map2d'),
+          cables,
+          lps: landingPoints.map((lp) => ({ ...lp, year: lpYear.get(lp.id) ?? YEAR_UNKNOWN })),
+          borders,
+          callbacks: {
+            onCable: (ci) => selectCable(ci, false),
+            onHub: (id) => { const lp = lpById.get(id); if (lp) selectHub(lp, false); },
+            onClear: () => clearSelection(),
+            onHover: (ci, pt) => {
+              if (ci !== null && pt) {
+                const c = cables[ci];
+                tooltip.innerHTML = `${c.name} <span class="t-meta">${
+                  c.year === YEAR_UNKNOWN ? '' : c.year
+                }${c.length ? ' · ' + c.length : ''}</span>`;
+                tooltip.style.left = `${Math.min(pt.x + 14, innerWidth - 220)}px`;
+                tooltip.style.top = `${pt.y + 14}px`;
+                tooltip.hidden = false;
+              } else tooltip.hidden = true;
+            },
+          },
+        });
+      } catch (err) {
+        console.error(err);
+        $('map2d').hidden = true;
+        $('map2d').style.visibility = '';
+        dimBtn.textContent = '🗺 2D map';
+        dimBtn.disabled = false;
+        return;
+      }
+      dimBtn.disabled = false;
+    }
+    is2D = true;
+    map2dApi.setYear(yearMax());
+    sync2DSelection();
+    $('map2d').hidden = false;
+    $('map2d').style.visibility = '';
+    map2dApi.show(globe.pointOfView());
+    globeEl.style.display = 'none';
+    globe.pauseAnimation();
+    dimBtn.textContent = '🌍 3D globe';
+  } else {
+    is2D = false;
+    const pov = map2dApi.hide();
+    $('map2d').hidden = true;
+    globeEl.style.display = '';
+    globe.resumeAnimation();
+    globe.pointOfView(pov, 0);
+    dimBtn.textContent = '🗺 2D map';
+    tooltip.hidden = true;
+  }
+}
+dimBtn.onclick = toggle2D;
 
 // ---------- selection ----------
 function applySel() {
@@ -314,16 +524,19 @@ function applySel() {
   cableGeom.attributes.aSel.needsUpdate = true;
   uniforms.uSelActive.value = selSet.size ? 1 : 0;
   updateRotate();
+  sync2DSelection();
 }
 
 function clearSelection() {
   selSet.clear();
   applySel();
   globe.ringsData([]);
+  map2dApi?.setLpHighlight(null);
   $('panel').hidden = true;
 }
 
 function ringOn(points, color) {
+  map2dApi?.setLpHighlight(points.map((p) => p.id));
   globe
     .ringsData(points)
     .ringColor(() => (t) => `rgba(${hexToRgb(color)},${1 - t})`)
@@ -342,7 +555,7 @@ function selectCable(ci, fly = true) {
   if (fly) {
     const [lat, lng] = cable.focus;
     const altitude = Math.min(2.4, Math.max(0.5, cable.lengthDeg / 55));
-    globe.pointOfView({ lat, lng, altitude }, 1100);
+    flyView({ lat, lng, altitude });
   }
   ringOn(
     cable.landingPoints.map((lp) => lpById.get(lp.id)).filter(Boolean),
@@ -355,7 +568,7 @@ function selectGroup(indices, { title, subtitle, fly, ringPoints, ringColor } = 
   selSet.clear();
   indices.forEach((ci) => selSet.add(ci));
   applySel();
-  if (fly) globe.pointOfView(fly, 1100);
+  if (fly) flyView(fly);
   if (ringPoints) ringOn(ringPoints, ringColor || '#6ee7ff');
   else globe.ringsData([]);
   renderGroupPanel(title, subtitle, indices);
@@ -511,6 +724,7 @@ const yearMax = () =>
 function updateTimeline() {
   const v = +yearInput.value;
   uniforms.uYearMax.value = yearMax();
+  map2dApi?.setYear(yearMax());
   const all = v >= YEAR_ALL;
   $('year-label').textContent = all ? 'All years' : v;
   const n = all ? cables.length : cables.filter((c) => c.year <= v).length;
@@ -778,8 +992,14 @@ $('discover-body').addEventListener('click', (ev) => {
 const findCable = (q) => cables.findIndex((c) => c.name.toLowerCase().includes(q));
 
 const TOUR_RUNS = [
-  () => { clearSelection(); showAllYears(); globe.pointOfView({ lat: 20, lng: -30, altitude: 2.3 }, 1400); },
   () => {
+    clearSelection();
+    showAllYears();
+    setSats(true); // "you'd think satellites…" — show them for the reveal
+    globe.pointOfView({ lat: 20, lng: -30, altitude: 2.3 }, 1400);
+  },
+  () => {
+    setSats(satsPref); // …no. Back to the cables.
     showAllYears();
     const indices = cablesNear(42, -40, 14);
     selectGroup(indices, { title: 'Transatlantic corridor', subtitle: `${indices.length} cables cross the North Atlantic` });
@@ -942,7 +1162,8 @@ function renderTourStop() {
   }
 }
 function goTour(i) { tourIdx = i; renderTourStop(); }
-function startTour() {
+async function startTour() {
+  if (is2D) await toggle2D(); // tour cinematics live on the globe
   $('tour').hidden = false;
   $('hint').hidden = true;
   startAmbient();
@@ -959,6 +1180,7 @@ function endTour() {
   stopPlay();
   showAllYears();
   clearSelection();
+  setSats(satsPref);
 }
 $('tour-next').onclick = () => (tourIdx < TOUR.length - 1 ? goTour(tourIdx + 1) : endTour());
 $('tour-prev').onclick = () => tourIdx > 0 && goTour(tourIdx - 1);
@@ -968,6 +1190,8 @@ $('tour-close').onclick = endTour;
 if (location.hash === '#tour') startTour();
 else if (location.hash === '#discover') $('discover').hidden = false;
 else if (location.hash === '#satellite') viewBtn.onclick();
+else if (location.hash === '#2d') toggle2D();
+else if (location.hash === '#satellites') satsBtn.onclick();
 else if (location.hash.startsWith('#country=')) {
   const q = decodeURIComponent(location.hash.slice(9)).toLowerCase();
   const name = countryNames.find((n) => n.toLowerCase() === q);

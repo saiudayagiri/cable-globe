@@ -7,10 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "data": "node scripts/fetch-data.mjs"
+    "data": "node scripts/fetch-data.mjs",
+    "vendor": "cp node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs public/vendor/"
   },
   "dependencies": {
-    "globe.gl": "^2.34.0"
+    "globe.gl": "^2.34.0",
+    "maplibre-gl": "^6.3.0"
   },
   "devDependencies": {
     "vite": "^6.0.0"

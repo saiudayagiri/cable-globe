@@ -20,6 +20,8 @@ body {
 }
 
 #globe { position: fixed; inset: 0; }
+#map2d { position: fixed; inset: 0; background: #02040a; }
+#map2d[hidden] { display: none; }
 #globe canvas { cursor: grab; }
 #globe canvas:active { cursor: grabbing; }
 #globe.cable-hover canvas { cursor: pointer; }

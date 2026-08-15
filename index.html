@@ -10,6 +10,7 @@
 </head>
 <body>
   <div id="globe"></div>
+  <div id="map2d" hidden></div>
 
   <header id="hud-top">
     <div id="brand">
@@ -29,9 +30,11 @@
   </nav>
 
   <div id="controls">
+    <button id="ctl-dim" title="Toggle 2D map">🗺 2D map</button>
     <button id="ctl-spin" title="Pause / resume rotation">⏸ spin</button>
-    <button id="ctl-view" title="Switch globe texture">🛰 satellite</button>
+    <button id="ctl-view" title="Switch globe texture">☀️ day</button>
     <button id="ctl-borders" title="Country borders" class="on">▦ borders</button>
+    <button id="ctl-sats" title="Real satellites (CelesTrak)">🛰 satellites</button>
   </div>
 
   <div id="tour" hidden>
