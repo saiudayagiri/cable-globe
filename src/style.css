@@ -251,6 +251,17 @@ body {
 #search-results li:last-child { border-bottom: none; }
 #search-results li:hover, #search-results li.active { background: rgba(110, 231, 255, 0.08); }
 #search-results .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+#search-results .country-dot { background: #ffd479; border-radius: 2px; }
+#search-results .r-tag {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #ffd479;
+  border: 1px solid rgba(255, 212, 121, 0.35);
+  border-radius: 1rem;
+  padding: 0.05rem 0.4rem;
+  flex: none;
+}
 #search-results .r-name { font-size: 0.85rem; }
 #search-results .r-meta { font-size: 0.72rem; color: var(--ink-3); margin-left: auto; white-space: nowrap; }
 

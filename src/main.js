@@ -556,7 +556,51 @@ function startPlay() {
 }
 $('play').onclick = () => (playing ? stopPlay() : startPlay());
 
+// ---------- countries as first-class entities ----------
+const countryIndex = new Map(); // country name -> {indices:Set, lpIds:Set}
+cables.forEach((c, ci) => {
+  for (const lp of c.landingPoints) {
+    if (!lp.country) continue;
+    if (!countryIndex.has(lp.country))
+      countryIndex.set(lp.country, { indices: new Set(), lpIds: new Set() });
+    const e = countryIndex.get(lp.country);
+    e.indices.add(ci);
+    if (lp.id && lpById.has(lp.id)) e.lpIds.add(lp.id);
+  }
+});
+
+function selectCountry(name) {
+  const e = countryIndex.get(name);
+  if (!e) return;
+  showAllYears();
+  const lps = [...e.lpIds].map((id) => lpById.get(id));
+  let fly = null;
+  if (lps.length) {
+    // fly to the centroid of this country's landing stations
+    const lat = lps.reduce((s, p) => s + p.lat, 0) / lps.length;
+    let lngs = lps.map((p) => p.lng);
+    // countries spanning the antimeridian (Fiji, NZ…): average in 0–360 space
+    if (Math.max(...lngs) - Math.min(...lngs) > 180)
+      lngs = lngs.map((l) => (l < 0 ? l + 360 : l));
+    let lng = lngs.reduce((s, l) => s + l, 0) / lngs.length;
+    if (lng > 180) lng -= 360;
+    const spread = Math.max(
+      Math.max(...lps.map((p) => p.lat)) - Math.min(...lps.map((p) => p.lat)),
+      Math.max(...lngs) - Math.min(...lngs)
+    );
+    fly = { lat, lng, altitude: Math.min(2.4, Math.max(0.7, spread / 40)) };
+  }
+  selectGroup([...e.indices], {
+    title: name,
+    subtitle: `${e.indices.size} cables · ${e.lpIds.size} landing stations`,
+    fly,
+    ringPoints: lps.length <= 40 ? lps : null,
+    ringColor: '#ffd479',
+  });
+}
+
 // ---------- search ----------
+const countryNames = [...countryIndex.keys()];
 const searchIndex = cables.map((c, ci) => ({
   ci,
   hay: [c.name, c.owners, c.suppliers, ...c.landingPoints.map((l) => `${l.name} ${l.country}`)]
@@ -571,21 +615,38 @@ const resultsEl = $('search-results');
 function runSearch(q) {
   q = q.trim().toLowerCase();
   if (q.length < 2) { resultsEl.hidden = true; return; }
-  const hits = searchIndex
+
+  const countryHits = countryNames
+    .filter((n) => n.toLowerCase().includes(q))
+    .sort((a, b) => countryIndex.get(b).indices.size - countryIndex.get(a).indices.size)
+    .slice(0, 3);
+  const cableHits = searchIndex
     .filter((e) => e.hay.includes(q))
     .sort((a, b) => (b.name.includes(q) ? 1 : 0) - (a.name.includes(q) ? 1 : 0))
-    .slice(0, 12);
-  resultsEl.innerHTML = hits
-    .map((e) => {
-      const c = cables[e.ci];
-      return `<li data-ci="${e.ci}">
+    .slice(0, 12 - countryHits.length);
+
+  resultsEl.innerHTML =
+    countryHits
+      .map(
+        (n) => `<li data-country="${n}">
+        <span class="dot country-dot"></span>
+        <span class="r-name">${n}</span>
+        <span class="r-tag">country</span>
+        <span class="r-meta">${countryIndex.get(n).indices.size} cables</span>
+      </li>`
+      )
+      .join('') +
+    cableHits
+      .map((e) => {
+        const c = cables[e.ci];
+        return `<li data-ci="${e.ci}">
         <span class="dot" style="background:${c.dispColor}"></span>
         <span class="r-name">${c.name}</span>
         <span class="r-meta">${c.year === YEAR_UNKNOWN ? '—' : c.year}${c.length ? ' · ' + c.length : ''}</span>
       </li>`;
-    })
-    .join('');
-  resultsEl.hidden = hits.length === 0;
+      })
+      .join('');
+  resultsEl.hidden = countryHits.length + cableHits.length === 0;
 }
 function pickResult(ci) {
   resultsEl.hidden = true;
@@ -595,15 +656,21 @@ function pickResult(ci) {
 }
 searchInput.addEventListener('input', () => runSearch(searchInput.value));
 searchInput.addEventListener('focus', () => runSearch(searchInput.value));
+function activateResult(li) {
+  resultsEl.hidden = true;
+  searchInput.blur();
+  if (li.dataset.country) selectCountry(li.dataset.country);
+  else pickResult(+li.dataset.ci);
+}
 searchInput.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter') {
-    const first = resultsEl.querySelector('li[data-ci]');
-    if (first) pickResult(+first.dataset.ci);
+    const first = resultsEl.querySelector('li[data-ci], li[data-country]');
+    if (first) activateResult(first);
   }
 });
 resultsEl.addEventListener('click', (ev) => {
-  const li = ev.target.closest('li[data-ci]');
-  if (li) pickResult(+li.dataset.ci);
+  const li = ev.target.closest('li[data-ci], li[data-country]');
+  if (li) activateResult(li);
 });
 document.addEventListener('click', (ev) => {
   if (!ev.target.closest('#search-wrap')) resultsEl.hidden = true;
@@ -812,6 +879,11 @@ $('tour-close').onclick = endTour;
 if (location.hash === '#tour') startTour();
 else if (location.hash === '#discover') $('discover').hidden = false;
 else if (location.hash === '#satellite') viewBtn.onclick();
+else if (location.hash.startsWith('#country=')) {
+  const q = decodeURIComponent(location.hash.slice(9)).toLowerCase();
+  const name = countryNames.find((n) => n.toLowerCase() === q);
+  if (name) selectCountry(name);
+}
 
 // ---------- header stats ----------
 const totalKm = cables.reduce((s, c) => s + c.km, 0);
