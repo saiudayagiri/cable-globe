@@ -15,6 +15,7 @@
     <div id="brand">
       <h1>Cable Atlas</h1>
       <p>the internet's undersea backbone · <span id="stat-line">…</span></p>
+      <button id="discover-btn">✦ Discover</button>
     </div>
     <div id="search-wrap">
       <input id="search" type="text" placeholder="Search cables, countries, owners…" autocomplete="off" spellcheck="false" />
@@ -22,11 +23,34 @@
     </div>
   </header>
 
+  <nav id="discover" hidden>
+    <button id="discover-close" aria-label="Close">×</button>
+    <div id="discover-body"></div>
+  </nav>
+
+  <div id="controls">
+    <button id="ctl-spin" title="Pause / resume rotation">⏸ spin</button>
+    <button id="ctl-view" title="Switch globe texture">🛰 satellite</button>
+    <button id="ctl-borders" title="Country borders" class="on">▦ borders</button>
+  </div>
+
+  <div id="tour" hidden>
+    <button id="tour-close" aria-label="End tour">×</button>
+    <h3 id="tour-title"></h3>
+    <p id="tour-text"></p>
+    <div id="tour-nav">
+      <button id="tour-prev">‹</button>
+      <div id="tour-dots"></div>
+      <button id="tour-next">›</button>
+    </div>
+  </div>
+
   <aside id="panel" hidden>
     <button id="panel-close" aria-label="Close">×</button>
     <div id="panel-accent"></div>
     <h2 id="panel-name"></h2>
     <div id="panel-badges"></div>
+    <ul id="panel-list" hidden></ul>
     <dl id="panel-stats"></dl>
     <div id="panel-owners"></div>
     <details id="panel-lps-wrap" open>

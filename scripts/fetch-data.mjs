@@ -59,6 +59,14 @@ function toPaths(multiLine) {
 
 console.log('Fetching cable geometry…');
 const geo = await getJSON(`${API}/cable/cable-geo.json`);
+// the API sometimes lists a cable as multiple features — merge by id
+const byId = new Map();
+for (const f of geo.features) {
+  const seen = byId.get(f.properties.id);
+  if (seen) seen.geometry.coordinates.push(...f.geometry.coordinates);
+  else byId.set(f.properties.id, f);
+}
+geo.features = [...byId.values()];
 console.log(`  ${geo.features.length} cables`);
 
 console.log('Fetching landing points…');
