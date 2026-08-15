@@ -1,0 +1,50 @@
+[
+  {
+    "title": "The hidden backbone",
+    "text": "Nearly all intercontinental internet traffic — not satellites, but over a million kilometres of fibre on the ocean floor. Every glowing thread is a real cable, every pulse a river of data.",
+    "dur": 12000,
+    "spin": true
+  },
+  {
+    "title": "The transatlantic highway",
+    "text": "The busiest deep-sea corridor on Earth. Cables like MAREA carry over 200 terabits per second between North America and Europe — enough to stream millions of videos at once.",
+    "dur": 14000,
+    "spin": false
+  },
+  {
+    "title": "Egypt: the internet's chokepoint",
+    "text": "The shortest path between Europe and Asia squeezes through the Suez Canal and Red Sea. A few hundred kilometres of desert coastline carry a huge share of all Europe to Asia traffic.",
+    "dur": 14000,
+    "spin": false
+  },
+  {
+    "title": "2Africa: the longest cable ever built",
+    "text": "45,000 kilometres — longer than the circumference of the Earth. It rings the entire African continent, built by Meta, Vodafone, Orange and partners to connect three billion people.",
+    "dur": 14000,
+    "spin": false
+  },
+  {
+    "title": "Big Tech lays its own",
+    "text": "Google, Meta, Microsoft and Amazon used to rent capacity. Now they build their own cables — hyperscalers fund most new transoceanic fibre laid today.",
+    "dur": 13000,
+    "spin": true
+  },
+  {
+    "title": "A single thread: Tonga",
+    "text": "Some nations hang by one cable. When the 2022 Hunga Tonga volcano severed Tonga's only link, the whole country went dark for weeks — repaired by a single cable ship.",
+    "dur": 13000,
+    "spin": false
+  },
+  {
+    "title": "Watch it grow: 1989 to today",
+    "text": "From the first fibre systems to the planned routes of 2029. Four decades of the internet physically wiring itself around the planet.",
+    "dur": 21000,
+    "spin": true
+  },
+  {
+    "title": "Now explore",
+    "text": "Click any cable or landing station. Press slash to search. Open Discover for chokepoints, hubs and records. Scrub the timeline. The whole map is real, current data.",
+    "dur": 12000,
+    "spin": true
+  }
+]

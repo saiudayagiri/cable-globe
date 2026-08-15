@@ -1,6 +1,7 @@
 import Globe from 'globe.gl';
 import * as THREE from 'three';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import TOUR_SCRIPT from './tour.json';
 
 const YEAR_MIN = 1989;
 const YEAR_ALL = 2030; // slider max = "All years"
@@ -776,71 +777,32 @@ $('discover-body').addEventListener('click', (ev) => {
 // ---------- guided tour ----------
 const findCable = (q) => cables.findIndex((c) => c.name.toLowerCase().includes(q));
 
-const TOUR = [
-  {
-    title: 'The hidden backbone',
-    text: 'Nearly all intercontinental internet traffic — not satellites, but over a million kilometres of fibre on the ocean floor. Every glowing thread is a real cable, every pulse a river of data.',
-    dur: 12000, spin: true,
-    run() { clearSelection(); showAllYears(); globe.pointOfView({ lat: 20, lng: -30, altitude: 2.3 }, 1400); },
+const TOUR_RUNS = [
+  () => { clearSelection(); showAllYears(); globe.pointOfView({ lat: 20, lng: -30, altitude: 2.3 }, 1400); },
+  () => {
+    showAllYears();
+    const indices = cablesNear(42, -40, 14);
+    selectGroup(indices, { title: 'Transatlantic corridor', subtitle: `${indices.length} cables cross the North Atlantic` });
+    globe.pointOfView({ lat: 42, lng: -40, altitude: 1.6 }, 1400);
   },
-  {
-    title: 'The transatlantic highway',
-    text: 'The busiest deep-sea corridor on Earth. Cables like MAREA carry over 200 terabits per second between North America and Europe — enough to stream millions of videos at once.',
-    dur: 14000, spin: false,
-    run() {
-      showAllYears();
-      const indices = cablesNear(42, -40, 14);
-      selectGroup(indices, { title: 'Transatlantic corridor', subtitle: `${indices.length} cables cross the North Atlantic` });
-      globe.pointOfView({ lat: 42, lng: -40, altitude: 1.6 }, 1400);
-    },
+  () => { selectChokepoint(CHOKEPOINTS[0]); },
+  () => { showAllYears(); const ci = findCable('2africa'); if (ci >= 0) selectCable(ci); },
+  () => { selectOwner('Google'); globe.pointOfView({ lat: 10, lng: -120, altitude: 2.2 }, 1400); },
+  () => { showAllYears(); const ci = findCable('tonga'); if (ci >= 0) selectCable(ci); },
+  () => {
+    clearSelection();
+    globe.pointOfView({ lat: 20, lng: 0, altitude: 2.4 }, 1400);
+    yearInput.value = YEAR_MIN;
+    updateTimeline();
+    startPlay();
   },
-  {
-    title: "Egypt: the internet's chokepoint",
-    text: 'The shortest path between Europe and Asia squeezes through the Suez Canal and Red Sea. A few hundred kilometres of desert coastline carry a huge share of all Europe–Asia traffic.',
-    dur: 14000, spin: false,
-    run() { selectChokepoint(CHOKEPOINTS[0]); },
-  },
-  {
-    title: '2Africa: the longest cable ever built',
-    text: '45,000 km — longer than the circumference of the Earth. It rings the entire African continent, built by Meta, Vodafone, Orange and partners to connect three billion people.',
-    dur: 14000, spin: false,
-    run() { showAllYears(); const ci = findCable('2africa'); if (ci >= 0) selectCable(ci); },
-  },
-  {
-    title: 'Big Tech lays its own',
-    text: 'Google, Meta, Microsoft and Amazon used to rent capacity. Now they build their own cables — hyperscalers fund most new transoceanic fibre laid today.',
-    dur: 13000, spin: true,
-    run() { selectOwner('Google'); globe.pointOfView({ lat: 10, lng: -120, altitude: 2.2 }, 1400); },
-  },
-  {
-    title: 'A single thread: Tonga',
-    text: "Some nations hang by one cable. When the 2022 Hunga Tonga volcano severed Tonga's only link, the whole country went dark for weeks — repaired by a single cable ship.",
-    dur: 13000, spin: false,
-    run() { showAllYears(); const ci = findCable('tonga'); if (ci >= 0) selectCable(ci); },
-  },
-  {
-    title: 'Watch it grow: 1989 → today',
-    text: 'From the first fibre systems to the planned routes of 2029. Four decades of the internet physically wiring itself around the planet.',
-    dur: 21000, spin: true,
-    run() {
-      clearSelection();
-      globe.pointOfView({ lat: 20, lng: 0, altitude: 2.4 }, 1400);
-      yearInput.value = YEAR_MIN;
-      updateTimeline();
-      startPlay();
-    },
-  },
-  {
-    title: 'Now explore',
-    text: 'Click any cable or landing station. Press / to search. Open ✦ Discover for chokepoints, hubs and records. Scrub the timeline. The whole map is real, current data.',
-    dur: 12000, spin: true,
-    run() { clearSelection(); showAllYears(); },
-  },
+  () => { clearSelection(); showAllYears(); },
 ];
+const TOUR = TOUR_SCRIPT.map((s, i) => ({ ...s, run: TOUR_RUNS[i] }));
 
 let tourIdx = 0, tourTimer = 0, tourSeq = 0;
 
-// ----- narration (browser speech synthesis — no files, no external service) -----
+// ----- narration: pre-generated neural TTS MP3s, speech synthesis as fallback -----
 const synth = window.speechSynthesis ?? null;
 let narrVoice = null;
 function pickVoice() {
@@ -853,6 +815,60 @@ function pickVoice() {
 pickVoice();
 synth?.addEventListener?.('voiceschanged', pickVoice);
 
+let tourAudio = null, preloadAudio = null;
+function stopNarration() {
+  if (tourAudio) {
+    tourAudio.onended = tourAudio.onerror = null;
+    tourAudio.pause();
+    tourAudio = null;
+  }
+  synth?.cancel();
+}
+
+// ----- ambient bed: a soft synthesized drone under the narration -----
+let amb = null;
+function startAmbient() {
+  if (amb || !voiceOn) return;
+  try {
+    const ctx = new AudioContext();
+    const master = ctx.createGain();
+    master.gain.value = 0;
+    master.connect(ctx.destination);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 240;
+    lp.connect(master);
+    for (const [freq, vol] of [[55, 0.5], [55.4, 0.5], [110.2, 0.16], [164.9, 0.07]]) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = freq;
+      const g = ctx.createGain();
+      g.gain.value = vol;
+      o.connect(g);
+      g.connect(lp);
+      o.start();
+    }
+    const lfo = ctx.createOscillator(); // slow filter drift = "breathing" ocean
+    lfo.frequency.value = 0.045;
+    const lfoG = ctx.createGain();
+    lfoG.gain.value = 60;
+    lfo.connect(lfoG);
+    lfoG.connect(lp.frequency);
+    lfo.start();
+    master.gain.linearRampToValueAtTime(0.045, ctx.currentTime + 4);
+    amb = {
+      stop() {
+        master.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.5);
+        setTimeout(() => ctx.close(), 1800);
+      },
+    };
+  } catch { /* no WebAudio — fine */ }
+}
+function stopAmbient() {
+  amb?.stop();
+  amb = null;
+}
+
 let voiceOn = localStorage.getItem('tourVoice') !== 'off';
 const voiceBtn = $('tour-voice');
 const syncVoiceBtn = () => {
@@ -864,8 +880,11 @@ voiceBtn.onclick = () => {
   voiceOn = !voiceOn;
   localStorage.setItem('tourVoice', voiceOn ? 'on' : 'off');
   syncVoiceBtn();
-  synth?.cancel();
-  if (voiceOn && !$('tour').hidden) renderTourStop(); // restart current stop with voice
+  stopNarration();
+  if (voiceOn) {
+    startAmbient();
+    if (!$('tour').hidden) renderTourStop(); // restart current stop with voice
+  } else stopAmbient();
 };
 
 function renderTourStop() {
@@ -882,33 +901,42 @@ function renderTourStop() {
   s.run();
 
   clearTimeout(tourTimer);
-  synth?.cancel();
+  stopNarration();
+  const t0 = performance.now();
   const goNext = () => {
     if (seq !== tourSeq) return;
     tourIdx < TOUR.length - 1 ? goTour(tourIdx + 1) : endTour();
   };
+  // advance when narration ends AND the visual has had its minimum time
+  const afterNarration = () => {
+    if (seq !== tourSeq) return;
+    clearTimeout(tourTimer);
+    tourTimer = setTimeout(goNext, Math.max(800, s.dur - (performance.now() - t0)));
+  };
+  const speakFallback = () => {
+    if (seq !== tourSeq) return;
+    if (synth && narrVoice) {
+      const u = new SpeechSynthesisUtterance(`${s.title}. ${s.text}`);
+      u.voice = narrVoice;
+      u.rate = 1.02;
+      u.onend = afterNarration;
+      u.onerror = afterNarration;
+      synth.speak(u);
+    } else afterNarration();
+  };
 
-  if (voiceOn && synth && narrVoice) {
-    const u = new SpeechSynthesisUtterance(`${s.title}. ${s.text}`);
-    u.voice = narrVoice;
-    u.rate = 1.02;
-    const t0 = performance.now();
-    // advance when narration ends AND the visual has had its minimum time
-    u.onend = () => {
-      if (seq !== tourSeq) return;
-      clearTimeout(tourTimer);
-      const wait = Math.max(800, s.dur - (performance.now() - t0));
-      tourTimer = setTimeout(goNext, wait);
-    };
-    // if speech is blocked (e.g. #tour deep link before any click), fall back
-    u.onerror = () => {
-      if (seq !== tourSeq) return;
-      clearTimeout(tourTimer);
-      tourTimer = setTimeout(goNext, Math.max(800, s.dur - (performance.now() - t0)));
-    };
-    // safety net in case neither end nor error ever fires
-    tourTimer = setTimeout(goNext, s.dur + 20000);
-    synth.speak(u);
+  if (voiceOn) {
+    const a = new Audio(`audio/tour-${tourIdx}.mp3`);
+    tourAudio = a;
+    a.onended = afterNarration;
+    a.onerror = speakFallback;
+    tourTimer = setTimeout(goNext, s.dur + 25000); // safety net
+    a.play().catch(speakFallback); // autoplay blocked (deep link) or missing file
+    if (tourIdx < TOUR.length - 1) {
+      preloadAudio = new Audio();
+      preloadAudio.preload = 'auto';
+      preloadAudio.src = `audio/tour-${tourIdx + 1}.mp3`;
+    }
   } else {
     tourTimer = setTimeout(goNext, s.dur);
   }
@@ -917,12 +945,14 @@ function goTour(i) { tourIdx = i; renderTourStop(); }
 function startTour() {
   $('tour').hidden = false;
   $('hint').hidden = true;
+  startAmbient();
   goTour(0);
 }
 function endTour() {
   tourSeq++; // invalidate pending narration/timer callbacks
   clearTimeout(tourTimer);
-  synth?.cancel();
+  stopNarration();
+  stopAmbient();
   $('tour').hidden = true;
   $('hint').hidden = false;
   tourSpin = null;
