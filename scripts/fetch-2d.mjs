@@ -59,7 +59,7 @@ countries.sort((a, b) => b.pop - a.pop).forEach((c, i) => { c.r = i; delete c.po
 
 // ---- city label points ----
 console.log('Fetching city labels…');
-const placesRaw = await getJSON(`${NE}/110m/cultural/ne_110m_populated_places.json`);
+const placesRaw = await getJSON(`${NE}/50m/cultural/ne_50m_populated_places.json`);
 const cities = placesRaw.features.map((f) => {
   const p = f.properties;
   const [lng, lat] = f.geometry.coordinates;

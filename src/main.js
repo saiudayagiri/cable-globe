@@ -718,6 +718,10 @@ function clearSelection() {
   map2dApi?.setLpHighlight(null);
   selectedSat = null;
   if (orbitLine) orbitLine.visible = false;
+  if (routeActive) {
+    routeActive = false;
+    globe.arcsData([]);
+  }
   $('panel').hidden = true;
 }
 
@@ -1110,6 +1114,7 @@ document.addEventListener('click', (ev) => {
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') {
     if (!$('tour').hidden) endTour();
+    if (!$('route-wrap').hidden) closeRoute();
     clearSelection();
     resultsEl.hidden = true;
     searchInput.blur();
@@ -1120,6 +1125,261 @@ document.addEventListener('keydown', (ev) => {
     searchInput.focus();
   }
 });
+
+// ---------- city-to-city routes over the real cable graph ----------
+const DR = Math.PI / 180;
+function haversine(a, b) {
+  const h =
+    Math.sin(((b.lat - a.lat) * DR) / 2) ** 2 +
+    Math.cos(a.lat * DR) * Math.cos(b.lat * DR) * Math.sin(((b.lng - a.lng) * DR) / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(h));
+}
+
+let routeGraph = null;
+function buildRouteGraph() {
+  const adj = new Map();
+  const add = (a, b, w, cable) => {
+    if (!adj.has(a)) adj.set(a, []);
+    adj.get(a).push({ to: b, w, cable });
+  };
+  // any two landing stations on the same cable are connected by that cable
+  cables.forEach((c, ci) => {
+    const ids = c.landingPoints.map((lp) => lp.id).filter((id) => id && lpById.has(id));
+    for (let i = 0; i < ids.length; i++)
+      for (let j = i + 1; j < ids.length; j++) {
+        const w = haversine(lpById.get(ids[i]), lpById.get(ids[j])) + 60; // +hop cost
+        add(ids[i], ids[j], w, ci);
+        add(ids[j], ids[i], w, ci);
+      }
+  });
+  // short overland links between nearby stations (crossing isthmuses, backhaul)
+  for (const a of landingPoints) {
+    const near = [];
+    for (const b of landingPoints) {
+      if (a === b) continue;
+      const d = haversine(a, b);
+      if (d < 1000) near.push([d, b.id]);
+    }
+    near.sort((x, y) => x[0] - y[0]).slice(0, 6)
+      .forEach(([d, id]) => add(a.id, id, d * 3 + 120, null));
+  }
+  return adj;
+}
+
+function nearestStations(pt, count, maxKm) {
+  return landingPoints
+    .map((lp) => ({ id: lp.id, d: haversine(pt, lp) }))
+    .filter((x) => x.d < maxKm)
+    .sort((x, y) => x.d - y.d)
+    .slice(0, count);
+}
+
+function shortestRoute(from, to) {
+  routeGraph ??= buildRouteGraph();
+  const starts = nearestStations(from, 4, 4000);
+  const ends = nearestStations(to, 4, 4000);
+  if (!starts.length || !ends.length) return null;
+  const endW = new Map(ends.map((e) => [e.id, e.d * 3]));
+
+  const dist = new Map(), prev = new Map(), done = new Set();
+  for (const s of starts) {
+    dist.set(s.id, s.d * 3);
+    prev.set(s.id, null);
+  }
+  while (true) {
+    let u = null, du = Infinity;
+    for (const [id, d] of dist) if (!done.has(id) && d < du) { u = id; du = d; }
+    if (u === null) break;
+    done.add(u);
+    for (const e of routeGraph.get(u) ?? []) {
+      const nd = du + e.w;
+      if (nd < (dist.get(e.to) ?? Infinity)) {
+        dist.set(e.to, nd);
+        prev.set(e.to, { from: u, cable: e.cable });
+      }
+    }
+  }
+
+  let best = null, bestCost = Infinity;
+  for (const [id, w] of endW) {
+    const d = dist.get(id);
+    if (d !== undefined && d + w < bestCost) { bestCost = d + w; best = id; }
+  }
+  if (best === null) return null;
+
+  const hops = [];
+  let cur = best;
+  while (prev.get(cur)) {
+    const p = prev.get(cur);
+    hops.unshift({ a: p.from, b: cur, cable: p.cable });
+    cur = p.from;
+  }
+  return { firstLp: cur, lastLp: best, hops };
+}
+
+let routeActive = false;
+function showRoute(from, to) {
+  const res = shortestRoute(from, to);
+  if (!res) {
+    renderGroupPanel(`${from.name} ⇄ ${to.name}`, 'no cable route found', []);
+    return;
+  }
+  routeActive = true;
+
+  // highlight the cables the route rides
+  selSet.clear();
+  for (const h of res.hops) if (h.cable !== null) selSet.add(h.cable);
+  applySel();
+  globe.ringsData([]);
+
+  // animated arcs: overland legs gold, cable legs cyan
+  const arcs = [];
+  const leg = (p, q, type) =>
+    arcs.push({ slat: p.lat, slng: p.lng, elat: q.lat, elng: q.lng, type });
+  const first = lpById.get(res.firstLp), last = lpById.get(res.lastLp);
+  if (haversine(from, first) > 30) leg(from, first, 'land');
+  for (const h of res.hops)
+    leg(lpById.get(h.a), lpById.get(h.b), h.cable === null ? 'land' : 'sea');
+  if (haversine(to, last) > 30) leg(last, to, 'land');
+
+  globe
+    .arcsData(arcs)
+    .arcStartLat((d) => d.slat)
+    .arcStartLng((d) => d.slng)
+    .arcEndLat((d) => d.elat)
+    .arcEndLng((d) => d.elng)
+    .arcColor((d) => (d.type === 'land' ? 'rgba(255,212,121,0.9)' : 'rgba(110,231,255,0.95)'))
+    .arcAltitudeAutoScale(0.25)
+    .arcStroke(0.55)
+    .arcDashLength(0.35)
+    .arcDashGap(0.18)
+    .arcDashAnimateTime(1500)
+    .arcsTransitionDuration(0);
+
+  // camera: frame the whole route
+  let lng1 = from.lng, lng2 = to.lng;
+  if (Math.abs(lng2 - lng1) > 180) { if (lng1 < 0) lng1 += 360; if (lng2 < 0) lng2 += 360; }
+  let midLng = (lng1 + lng2) / 2;
+  if (midLng > 180) midLng -= 360;
+  const span = haversine(from, to);
+  flyView({
+    lat: (from.lat + to.lat) / 2,
+    lng: midLng,
+    altitude: Math.min(2.5, Math.max(0.6, span / 5500)),
+  });
+
+  renderRoutePanel(from, to, res);
+}
+
+function renderRoutePanel(from, to, res) {
+  const cityName = (p) => p.name.split(',')[0];
+  panelBase(`${cityName(from)} ⇄ ${cityName(to)}`);
+  $('panel-accent').style.background =
+    'linear-gradient(90deg, #ffd479, #6ee7ff)';
+
+  // merge consecutive hops on the same cable for display
+  const legs = [];
+  for (const h of res.hops) {
+    const last = legs[legs.length - 1];
+    if (last && last.cable === h.cable) last.b = h.b;
+    else legs.push({ ...h });
+  }
+  const totalKm = Math.round(
+    res.hops.reduce((s, h) => s + haversine(lpById.get(h.a), lpById.get(h.b)), 0)
+  );
+  $('panel-badges').innerHTML =
+    `<span class="badge">~${totalKm.toLocaleString()} km undersea</span>` +
+    `<span class="badge">${legs.filter((l) => l.cable !== null).length} cable${legs.filter((l) => l.cable !== null).length === 1 ? '' : 's'}</span>`;
+
+  const list = $('panel-list');
+  const city = (id) => lpById.get(id).name.split(',')[0];
+  list.innerHTML = legs
+    .map((l) => {
+      if (l.cable === null)
+        return `<li><span class="dot" style="background:#ffd479"></span>
+          <span class="r-name">${city(l.a)} ⇢ ${city(l.b)} <span class="r-meta">overland</span></span></li>`;
+      const c = cables[l.cable];
+      return `<li data-ci="${l.cable}">
+        <span class="dot" style="background:${c.dispColor}"></span>
+        <span class="r-name">${city(l.a)} ⇢ ${city(l.b)}<br><span class="r-meta">via ${c.name}</span></span>
+      </li>`;
+    })
+    .join('');
+  list.hidden = false;
+  $('panel-owners').innerHTML =
+    `<span class="chip">illustrative — real cables, operator routing varies</span>`;
+}
+
+// ----- route UI -----
+const routeWrap = $('route-wrap');
+let placeIndex = null;
+let routeFrom = null, routeTo = null;
+
+async function ensurePlaceIndex() {
+  if (placeIndex) return;
+  let cityPlaces = [];
+  try {
+    const places = await fetch('data/places.json').then((r) => r.json());
+    cityPlaces = places.cities.map((c) => ({ name: c.n, sub: 'city', lat: c.lat, lng: c.lng }));
+  } catch { /* cities optional */ }
+  placeIndex = [
+    ...cityPlaces,
+    ...landingPoints.map((lp) => ({ name: lp.name, sub: 'landing point', lat: lp.lat, lng: lp.lng })),
+  ];
+}
+
+function openRoute() {
+  routeWrap.hidden = false;
+  document.body.classList.add('routing');
+  ensurePlaceIndex();
+  $('route-a').focus();
+}
+function closeRoute() {
+  routeWrap.hidden = true;
+  document.body.classList.remove('routing');
+  routeFrom = routeTo = null;
+  $('route-a').value = $('route-b').value = '';
+  if (routeActive) {
+    routeActive = false;
+    globe.arcsData([]);
+    clearSelection();
+  }
+}
+$('ctl-route').onclick = () => (routeWrap.hidden ? openRoute() : closeRoute());
+$('route-close').onclick = closeRoute;
+
+function wireRouteInput(inputId, resId, setter) {
+  const input = $(inputId), res = $(resId);
+  input.addEventListener('input', async () => {
+    const q = input.value.trim().toLowerCase();
+    if (q.length < 2) { res.hidden = true; return; }
+    await ensurePlaceIndex();
+    if (input.value.trim().toLowerCase() !== q) return; // superseded keystroke
+    const hits = placeIndex
+      .filter((p) => p.name.toLowerCase().includes(q))
+      .sort((a, b) => (b.sub === 'city' ? 1 : 0) - (a.sub === 'city' ? 1 : 0))
+      .slice(0, 8);
+    res.innerHTML = hits
+      .map((p, i) => `<li data-i="${i}"><span>${p.name}</span><span class="rr-sub">${p.sub}</span></li>`)
+      .join('');
+    res.hidden = hits.length === 0;
+    res._hits = hits;
+  });
+  res.addEventListener('click', (ev) => {
+    const li = ev.target.closest('li[data-i]');
+    if (!li) return;
+    const p = res._hits[+li.dataset.i];
+    setter(p);
+    input.value = p.name;
+    res.hidden = true;
+    if (routeFrom && routeTo) {
+      showAllYears();
+      showRoute(routeFrom, routeTo);
+    }
+  });
+}
+wireRouteInput('route-a', 'route-a-res', (p) => (routeFrom = p));
+wireRouteInput('route-b', 'route-b-res', (p) => (routeTo = p));
 
 // ---------- discover drawer ----------
 const CHOKEPOINTS = [

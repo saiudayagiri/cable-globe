@@ -122,6 +122,69 @@ body {
 .d-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .d-meta { color: var(--ink-3); font-size: 0.7rem; white-space: nowrap; flex: none; }
 
+/* ---------- route panel ---------- */
+#route-wrap {
+  position: fixed;
+  top: 5.2rem; right: 1.3rem;
+  width: min(21rem, calc(100vw - 2.6rem));
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  padding: 0.9rem 1rem;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.55);
+  z-index: 5;
+}
+#route-wrap h3 { font-size: 0.85rem; margin-bottom: 0.6rem; }
+#route-close {
+  position: absolute;
+  top: 0.5rem; right: 0.7rem;
+  background: none; border: none;
+  color: var(--ink-3);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+#route-close:hover { color: var(--ink); }
+.route-field { position: relative; margin-bottom: 0.5rem; }
+.route-field input {
+  width: 100%;
+  padding: 0.5rem 0.8rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  color: var(--ink);
+  font-size: 0.84rem;
+  outline: none;
+}
+.route-field input:focus { border-color: rgba(110, 231, 255, 0.45); }
+.route-res {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0; right: 0;
+  max-height: 12rem;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--surface-solid);
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  z-index: 6;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+.route-res li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+}
+.route-res li:last-child { border-bottom: none; }
+.route-res li:hover { background: rgba(110, 231, 255, 0.08); }
+.route-res .rr-sub { color: var(--ink-3); font-size: 0.68rem; white-space: nowrap; }
+.route-note { font-size: 0.66rem; color: var(--ink-3); line-height: 1.4; }
+body.routing #panel { top: 17.5rem; max-height: calc(100vh - 23rem); }
+
 /* ---------- view controls ---------- */
 #controls {
   position: fixed;

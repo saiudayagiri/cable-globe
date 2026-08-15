@@ -29,7 +29,22 @@
     <div id="discover-body"></div>
   </nav>
 
+  <div id="route-wrap" hidden>
+    <button id="route-close" aria-label="Close">×</button>
+    <h3>⇄ Route between two cities</h3>
+    <div class="route-field">
+      <input id="route-a" placeholder="From — city or landing point" autocomplete="off" spellcheck="false" />
+      <ul class="route-res" id="route-a-res" hidden></ul>
+    </div>
+    <div class="route-field">
+      <input id="route-b" placeholder="To — city or landing point" autocomplete="off" spellcheck="false" />
+      <ul class="route-res" id="route-b-res" hidden></ul>
+    </div>
+    <p class="route-note">Illustrative shortest path over real cable routes — actual traffic depends on operator routing.</p>
+  </div>
+
   <div id="controls">
+    <button id="ctl-route" title="Route between two cities">⇄ route</button>
     <button id="ctl-dim" title="Toggle 2D map">🗺 2D map</button>
     <button id="ctl-spin" title="Pause / resume rotation">⏸ spin</button>
     <button id="ctl-view" title="Switch globe texture">☀️ day</button>
