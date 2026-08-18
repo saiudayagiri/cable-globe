@@ -23,6 +23,7 @@ spec:
       containers:
         - name: web
           image: ghcr.io/saiudayagiri/cable-atlas:v1
+          imagePullPolicy: Always # v1 is a moving tag; never reuse a stale cache
           ports:
             - containerPort: 80
           resources:
