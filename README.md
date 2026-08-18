@@ -4,7 +4,8 @@
 submarine cable on Earth, live satellites, and city-to-city routing, on a
 cinematic globe.**
 
-**Live demo → [cable-globe.vercel.app](https://cable-globe.vercel.app)**
+Built at [Newton School of Technology](https://www.newtonschool.co/newton-school-of-technology-nst/home),
+self-hosted on its Kubernetes infrastructure.
 
 ![Cable Atlas — 3D globe](docs/globe.png)
 
@@ -74,13 +75,11 @@ node scripts/fetch-satellites.mjs  # satellite elements (CelesTrak)
 
 ## Deploy
 
-**Vercel**: `vercel deploy --prod` (that's what runs the live demo).
-
-**Docker / Kubernetes / Rancher** — image at `ghcr.io/saiudayagiri/cable-atlas`:
+**Docker / Kubernetes / Rancher** — image at `ghcr.io/saiudayagiri/cable-atlas`
+(multi-arch: amd64 + arm64):
 
 ```bash
-docker build -t ghcr.io/saiudayagiri/cable-atlas:v1 .
-docker push ghcr.io/saiudayagiri/cable-atlas:v1
+docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/saiudayagiri/cable-atlas:v1 --push .
 
 kubectl create namespace cable-atlas
 kubectl apply -n cable-atlas -f deploy/k8s.yaml   # edit Ingress host first

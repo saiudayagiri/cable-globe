@@ -47,7 +47,26 @@ body {
 }
 #brand p { color: var(--ink-2); font-size: 0.8rem; margin-top: 0.2rem; }
 
+#org-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding: 0.28rem 0.65rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 1.2rem;
+  color: var(--ink-2);
+  font-size: 0.72rem;
+  text-decoration: none;
+  backdrop-filter: blur(12px);
+}
+#org-badge img { border-radius: 4px; display: block; }
+#org-badge b { color: var(--ink); font-weight: 600; }
+#org-badge:hover { border-color: rgba(110, 231, 255, 0.4); color: var(--ink); }
+
 #discover-btn {
+  margin-left: 0.5rem;
   margin-top: 0.55rem;
   background: rgba(110, 231, 255, 0.09);
   border: 1px solid rgba(110, 231, 255, 0.35);
