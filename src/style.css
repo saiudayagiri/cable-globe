@@ -464,6 +464,7 @@ body.routing #panel { top: 17.5rem; max-height: calc(100vh - 23rem); }
 #credit { font-size: 0.68rem; color: var(--ink-3); }
 #credit a { color: var(--ink-2); text-decoration: none; }
 #credit a:hover { color: var(--accent); }
+#gh-link svg { vertical-align: -1.5px; margin-right: 0.15rem; }
 
 /* ---------- tooltip ---------- */
 #tooltip {
