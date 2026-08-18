@@ -16,9 +16,13 @@ spec:
     metadata:
       labels: { app: cable-atlas }
     spec:
+      # if the ghcr.io package is private, create the secret (see deploy notes
+      # in README) and uncomment:
+      # imagePullSecrets:
+      #   - name: ghcr-pull
       containers:
         - name: web
-          image: REGISTRY/cable-atlas:v1 # <- your registry
+          image: ghcr.io/saiudayagiri/cable-atlas:v1
           ports:
             - containerPort: 80
           resources:
